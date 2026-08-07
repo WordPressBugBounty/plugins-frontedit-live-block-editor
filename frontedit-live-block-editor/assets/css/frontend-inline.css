@@ -1,0 +1,1749 @@
+/**
+ * FrontEdit - Live Frontend Block Editor - Complete Styles
+ * Reorganized with CSS Variables for Better Maintainability
+ */
+
+/*
+ * Varela Round is bundled with this plugin under the SIL Open Font License 1.1.
+ * See ../fonts/OFL.txt for the complete license and attribution.
+ */
+@font-face {
+	font-family: 'Varela Round';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('../fonts/VarelaRound-Regular.ttf') format('truetype');
+}
+
+/* ============================================
+   CSS VARIABLES
+   ============================================ */
+:root {
+	/* ===== COLORS ===== */
+	/* Backgrounds */
+	--mwp-sfe-bg-darkest: #1a1a1a;
+	--mwp-sfe-bg-dark:    #2a2a2a;
+	--mwp-sfe-bg-medium:  #333;
+	--mwp-sfe-bg-light:   #444;
+	
+	/* Borders */
+	--mwp-sfe-border-dark:   #333;
+	--mwp-sfe-border-medium: #444;
+	
+	/* Brand Colors */
+	--mwp-sfe-primary:        #2196F3;
+	--mwp-sfe-primary-dark:   #1976D2;
+	--mwp-sfe-primary-darker: #1565C0;
+	
+	/* Status Colors */
+	--mwp-sfe-success:      #00a32a;
+	--mwp-sfe-success-dark: #008a20;
+	--mwp-sfe-warning:      #f56e28;
+	--mwp-sfe-warning-dark: #d95f20;
+	--mwp-sfe-failure:      #dc3232;
+	--mwp-sfe-failure-dark: #b52828;
+	
+	/* Text Colors */
+	--mwp-sfe-text-light: white;
+	--mwp-sfe-text-muted: #999;
+	
+	/* Alpha Colors */
+	--mwp-sfe-primary-alpha-10: rgba(33, 150, 243, 0.1);
+	--mwp-sfe-primary-alpha-20: rgba(33, 150, 243, 0.2);
+	--mwp-sfe-primary-alpha-25: rgba(33, 150, 243, 0.25);
+	--mwp-sfe-primary-alpha-40: rgba(33, 150, 243, 0.4);
+	--mwp-sfe-warning-alpha-10: rgba(245, 110, 40, 0.1);
+	--mwp-sfe-warning-alpha-40: rgba(245, 110, 40, 0.4);
+	--mwp-sfe-success-alpha-10: rgba(0, 163, 42, 0.1);
+	--mwp-sfe-success-alpha-40: rgba(0, 163, 42, 0.4);
+	--mwp-sfe-failure-alpha-40: rgba(220, 50, 50, 0.4);
+	--mwp-sfe-black-alpha-10:   rgba(0, 0, 0, 0.1);
+	--mwp-sfe-black-alpha-25:   rgba(0, 0, 0, 0.25);
+	--mwp-sfe-black-alpha-40:   rgba(0, 0, 0, 0.4);
+	--mwp-sfe-black-alpha-80:   rgba(0, 0, 0, 0.8);
+	--mwp-sfe-white-alpha-10:   rgba(255, 255, 255, 0.1);
+	--mwp-sfe-white-alpha-20:   rgba(255, 255, 255, 0.2);
+	--mwp-sfe-white-alpha-30:   rgba(255, 255, 255, 0.3);
+	
+	/* ===== SPACING ===== */
+	--mwp-sfe-gap-tiny:   2px;
+	--mwp-sfe-gap-small:  4px;
+	--mwp-sfe-gap-medium: 10px;
+	--mwp-sfe-gap-large:  20px;
+	
+	--mwp-sfe-padding-small:      4px;
+	--mwp-sfe-padding-medium:     10px;
+	--mwp-sfe-padding-large:      20px;
+	--mwp-sfe-padding-button-v:   7px;
+	--mwp-sfe-padding-button-h:   14px;
+	--mwp-sfe-padding-editor-btn: 3px;
+	
+	/* ===== SIZING ===== */
+	--mwp-sfe-button-height:     30px;
+	--mwp-sfe-button-size:       30px;
+	--mwp-sfe-button-inner-size: 28px;
+	--mwp-sfe-icon-size:         18px;
+	--mwp-sfe-spinner-size:      14px;
+	--mwp-sfe-success-icon-size: 24px;
+	
+	/* ===== BORDER RADIUS ===== */
+	--mwp-sfe-radius-small:  3px;
+	--mwp-sfe-radius-medium: 4px;
+	--mwp-sfe-radius-large:  6px;
+	--mwp-sfe-radius-xlarge: 8px;
+	
+	/* ===== TRANSITIONS ===== */
+	--mwp-sfe-transition-instant:  0.1s ease;
+	--mwp-sfe-transition-fast:     0.2s ease;
+	--mwp-sfe-transition-medium:   0.3s ease;
+	--mwp-sfe-transition-slow:     0.6s linear infinite;
+	--mwp-sfe-transition-position: top 0.2s ease, left 0.2s ease;
+	--mwp-sfe-transition-size:     width 0.2s ease, height 0.2s ease;
+	
+	/* ===== Z-INDEX ===== */
+	--mwp-sfe-z-dropdown:       1;
+	--mwp-sfe-z-element-active: 1234;
+	--mwp-sfe-z-tooltip:        1234;
+	--mwp-sfe-z-overlay:        12345;
+	--mwp-sfe-z-preview:        123456;
+	--mwp-sfe-z-actions:        123456;
+	--mwp-sfe-z-toolbar:        123456;
+	--mwp-sfe-z-success:        1234567;
+	--mwp-sfe-z-mode-toggle:    12345678;
+	
+	/* ===== TYPOGRAPHY ===== */
+	--mwp-sfe-font-size-tiny:   10px;
+	--mwp-sfe-font-size-small:  12px;
+	--mwp-sfe-font-size-medium: 14px;
+	--mwp-sfe-font-size-large:  16px;
+	--mwp-sfe-font-family:      'Varela Round', sans-serif;
+	
+	/* ===== SHADOWS ===== */
+	--mwp-sfe-shadow-light:    0 0 12px var(--mwp-sfe-black-alpha-10);
+	--mwp-sfe-shadow-medium:   0 0 12px var(--mwp-sfe-black-alpha-40);
+	--mwp-sfe-shadow-dark:     0 0 12px var(--mwp-sfe-black-alpha-80);
+	--mwp-sfe-shadow-elevated: 0 4px 12px var(--mwp-sfe-black-alpha-40),   0 0 0 1px var(--mwp-sfe-white-alpha-10);
+	--mwp-sfe-shadow-success:  0 4px 12px var(--mwp-sfe-success-alpha-40), 0 0 0 1px var(--mwp-sfe-success-alpha-10);
+	--mwp-sfe-shadow-comment:  0 4px 20px var(--mwp-sfe-primary-alpha-40);
+	--mwp-sfe-shadow-warning:  0 4px 20px var(--mwp-sfe-warning-alpha-40);
+	--mwp-sfe-shadow-failure:  0 4px 20px var(--mwp-sfe-failure-alpha-40);
+}
+
+/* ============================================
+   BODY STATES
+   ============================================ */
+body.mwp-sfe-editing-in-progress {
+	position: relative;
+}
+
+/* ============================================
+   OVERLAY SYSTEM
+   ============================================ */
+
+.mwp-sfe-overlay-container {
+	position: absolute;
+	pointer-events: none;
+	opacity: 1;
+	overflow: visible;
+	z-index: var(--mwp-sfe-z-overlay);
+	transition: opacity var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-overlay {
+	border-radius: var(--mwp-sfe-radius-xlarge);
+	box-sizing: border-box;
+}
+
+/* No border radius when element is active */
+.mwp-sfe-overlay.mwp-sfe-overlay-active {
+	border-radius: unset;
+}
+
+/* Status Overlays (Always Visible) */
+.mwp-sfe-overlay-status {
+	position: absolute;
+	pointer-events: none;
+	opacity: 1;
+	outline: 3px dotted var(--mwp-sfe-success);
+	transition: 
+		opacity var(--mwp-sfe-transition-fast), 
+		outline-color var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-overlay-status[data-status="pending"] {
+	outline-color: var(--mwp-sfe-warning);
+}
+
+.mwp-sfe-overlay-status[data-status="comment-only"] {
+	outline-color: var(--mwp-sfe-primary);
+}
+
+/* Keep standard green status outlines fully suppressed during any live editor
+   session so preview/edit toggles cannot flash them back on via inline opacity. */
+body.mwp-sfe-is-editing .mwp-sfe-overlay-status:not([data-status="pending"]):not([data-status="comment-only"]) {
+	opacity: 0 !important;
+	transition: none !important;
+}
+
+/* Comment and draft active sessions should suppress every background status
+   outline so preview toggles cannot briefly reveal blue/orange overlays. */
+body.mwp-sfe-is-editing.mwp-sfe-mode-commenting .mwp-sfe-overlay-status,
+body.mwp-sfe-is-editing.mwp-sfe-mode-draft .mwp-sfe-overlay-status {
+	opacity: 0 !important;
+	transition: none !important;
+}
+
+/* Hover Overlay (Moving Blue Outline) */
+.mwp-sfe-overlay-hover {
+	position: absolute;
+	pointer-events: none;
+	opacity: 0;
+	outline: 3px solid var(--mwp-sfe-primary);
+	outline-offset: 4px;
+	border-radius: var(--mwp-sfe-radius-xlarge);
+	transition: 
+		top var(--mwp-sfe-transition-fast),
+		left var(--mwp-sfe-transition-fast),
+		width var(--mwp-sfe-transition-fast),
+		height var(--mwp-sfe-transition-fast),
+		opacity var(--mwp-sfe-transition-fast);
+}
+
+/* Active Overlays (Editing States) */
+.mwp-sfe-overlay-active {
+	position: absolute;
+	pointer-events: none;
+	opacity: 0;
+	transition: 
+		opacity var(--mwp-sfe-transition-fast), 
+		box-shadow var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-overlay-active[data-mode="editing"] {
+	box-shadow: 
+		var(--mwp-sfe-shadow-success),
+		inset 0 0 0 9999px transparent;
+}
+
+/* Commenting always uses blue - whether the element also has an edit handler or not. */
+.mwp-sfe-overlay-active[data-mode="commenting"] {
+	box-shadow: 
+		0 4px 12px var(--mwp-sfe-primary-alpha-40),
+		0 0 0 1px var(--mwp-sfe-primary-alpha-20),
+		inset 0 0 0 9999px transparent;
+}
+
+.mwp-sfe-overlay-active[data-mode="draft-editing"],
+.mwp-sfe-overlay-active[data-mode="draft-preview"] {
+	box-shadow: 
+		0 4px 12px var(--mwp-sfe-warning-alpha-40),
+		0 0 0 1px var(--mwp-sfe-warning-alpha-10),
+		inset 0 0 0 9999px transparent;
+}
+
+@media print {
+	.mwp-sfe-overlay-container {
+		display: none !important;
+	}
+}
+
+/* ============================================
+   ELEMENT STATES
+   ============================================ */
+[data-mwp-sfe-bound="1"],
+[data-mwp-sfe-bound="1"] * {
+	cursor: pointer !important;
+}
+
+[data-mwp-sfe-bound="1"].mwp-sfe-element-active,
+[data-mwp-sfe-bound="1"].mwp-sfe-element-active * {
+	cursor: auto !important;
+	pointer-events: auto !important;
+}
+
+/* Hide all children in collapsed core/details */
+.wp-block-details:not([open]) > :not(summary) {
+	display: none !important;
+}
+
+/* ============================================
+   EDITING INTERACTION LOCK
+   mwp-sfe-is-editing is added to body for ANY active mode:
+   regular editing, comment mode, and draft preview.
+   This prevents page links and other non-plugin content
+   from being interactable while the user is in any mode.
+   ============================================ */
+body.mwp-sfe-is-editing * {
+	pointer-events: none;
+}
+
+/* Always restore the active element and plugin chrome. */
+body.mwp-sfe-is-editing .mwp-sfe-element-active,
+body.mwp-sfe-is-editing .mwp-sfe-element-active *,
+body.mwp-sfe-is-editing .mwp-sfe-inline-toolbar,
+body.mwp-sfe-is-editing .mwp-sfe-inline-toolbar *,
+body.mwp-sfe-is-editing .mwp-sfe-inline-actions,
+body.mwp-sfe-is-editing .mwp-sfe-inline-actions *,
+body.mwp-sfe-is-editing .mwp-sfe-mode-toggle-bar,
+body.mwp-sfe-is-editing .mwp-sfe-mode-toggle-bar *,
+body.mwp-sfe-is-editing .mwp-abe-shadow-host,
+body.mwp-sfe-is-editing .mwp-abe-global-modal,
+body.mwp-sfe-is-editing .mwp-abe-global-modal *,
+body.mwp-sfe-is-editing .mwp-sfe-grip-bar,
+body.mwp-sfe-is-editing .mwp-sfe-grip-bar * {
+	pointer-events: auto;
+}
+
+/* The post-lock modal can open while an editor remains active. It is its own
+   interactive surface, so the page-wide edit lock must not swallow its buttons. */
+body.mwp-sfe-is-editing .mwp-sfe-post-lock-modal,
+body.mwp-sfe-is-editing .mwp-sfe-post-lock-modal * {
+	pointer-events: auto !important;
+	cursor: auto !important;
+}
+
+body.mwp-sfe-is-editing .mwp-sfe-post-lock-modal button {
+	cursor: pointer !important;
+}
+
+/* When an ABE modal is open, it becomes the only interactive surface.
+   This keeps the page, editor chrome, and drawer locked underneath the
+   modal while still letting the modal close button and panel content work. */
+body.mwp-abe-modal-open * {
+	pointer-events: none;
+}
+
+body.mwp-abe-modal-open .mwp-abe-global-modal,
+body.mwp-abe-modal-open .mwp-abe-global-modal * {
+	pointer-events: auto !important;
+}
+
+/* ============================================
+   POST LOCK MODAL
+   Mirrors the shared frontend modal treatment while staying independent from
+   ABE branding and feature-specific markup.
+   ============================================ */
+.mwp-sfe-post-lock-modal {
+	position: fixed;
+	inset: 0;
+	z-index: var(--mwp-sfe-z-mode-toggle);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-post-lock-modal,
+.mwp-sfe-post-lock-modal * {
+	box-sizing: border-box;
+	font-family: var(--mwp-sfe-font-family) !important;
+	font-weight: normal !important;
+}
+
+.mwp-sfe-post-lock-modal.is-open {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.mwp-sfe-post-lock-backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(7, 11, 18, 0.58);
+	backdrop-filter: blur(10px);
+}
+
+.mwp-sfe-post-lock-dialog {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	padding: 24px;
+}
+
+.mwp-sfe-post-lock-panel {
+	width: min(400px, 95vw);
+	border: 1px solid var(--mwp-sfe-border-dark);
+	border-radius: var(--mwp-sfe-radius-xlarge);
+	background: var(--mwp-sfe-bg-darkest);
+	box-shadow: var(--mwp-sfe-shadow-elevated);
+	overflow: hidden;
+	transform: translateY(24px) scale(0.98);
+	transition: transform var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-post-lock-modal.is-open .mwp-sfe-post-lock-panel {
+	transform: translateY(0) scale(1);
+}
+
+.mwp-sfe-post-lock-header {
+	padding: 18px var(--mwp-sfe-padding-large);
+	border-bottom: 1px solid var(--mwp-sfe-border-dark);
+}
+
+.mwp-sfe-post-lock-title {
+	margin: 0;
+	color: var(--mwp-sfe-text-light);
+	font-size: 24px;
+	line-height: 1.15;
+}
+
+.mwp-sfe-post-lock-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-large);
+	padding: 24px var(--mwp-sfe-padding-large);
+}
+
+.mwp-sfe-post-lock-copy {
+	margin: 0;
+	color: var(--mwp-sfe-text-muted);
+	font-size: var(--mwp-sfe-font-size-medium);
+	line-height: 1.6;
+}
+
+.mwp-sfe-post-lock-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--mwp-sfe-gap-medium);
+}
+
+/* Batch editing (regular editor active, NOT comment or draft mode):
+   restore pointer-events for switchable bound elements so users can switch targets.
+   Pending drafts (.mwp-sfe-status-pending) and comment-only elements
+   (.mwp-sfe-status-comment-only) are excluded - their status overlays own the
+   cursor and click behavior (see overlay rules below). */
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) [data-mwp-sfe-bound="1"]:not(.mwp-sfe-status-pending):not(.mwp-sfe-status-comment-only),
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) [data-mwp-sfe-bound="1"]:not(.mwp-sfe-status-pending):not(.mwp-sfe-status-comment-only) * {
+	pointer-events: auto;
+}
+
+/* Lift the active batch-edit block above unrelated overlapping page blocks so
+   later DOM siblings cannot steal hover/click hit-testing inside the active
+   block's painted area. This remains narrow to regular batch editing only and
+   preserves inner block/component interaction because the full active subtree
+   stays inside the lifted stacking context. */
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) [data-mwp-sfe-bound="1"].mwp-sfe-element-active {
+	position: relative;
+	z-index: var(--mwp-sfe-z-element-active) !important;
+}
+
+/* Nested switchable elements inside the currently-active element (e.g. a text
+   block visually on top of a Cover block) need cursor:pointer restored, because
+   .mwp-sfe-element-active * { cursor: auto !important } is broad enough to reach
+   those inner nodes via descendant matching. Locked types are still excluded. */
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) [data-mwp-sfe-bound="1"].mwp-sfe-element-active [data-mwp-sfe-bound="1"]:not(.mwp-sfe-element-active):not(.mwp-sfe-status-pending):not(.mwp-sfe-status-comment-only),
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) [data-mwp-sfe-bound="1"].mwp-sfe-element-active [data-mwp-sfe-bound="1"]:not(.mwp-sfe-element-active):not(.mwp-sfe-status-pending):not(.mwp-sfe-status-comment-only) * {
+	cursor: pointer !important;
+}
+
+/* Locked element overlays (pending draft, comment-only) in a batch edit session.
+   The overlay must absorb the cursor and block clicks so the active editor is
+   not accidentally closed.
+   IMPORTANT: status overlays are created with pointer-events:none as an inline
+   style (JS constructor), so !important is required here to override it - this
+   is intentional and must not be removed. The underlying element stays
+   pointer-events:none from the body rule above, so no element click handler
+   fires. Clicks on the overlay land on data-mwp-sfe-control territory and are
+   silently swallowed by the global click handler. */
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) [data-mwp-sfe-bound="1"].mwp-sfe-status-pending,
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) [data-mwp-sfe-bound="1"].mwp-sfe-status-comment-only {
+	pointer-events: auto;
+	cursor: not-allowed !important;
+}
+
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) .mwp-sfe-overlay-status[data-status="pending"],
+body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview):not(.mwp-sfe-mode-commenting):not(.mwp-sfe-mode-draft) .mwp-sfe-overlay-status[data-status="comment-only"] {
+	pointer-events: none !important;
+	cursor: not-allowed !important;
+}
+
+/* ============================================
+   GLOBAL TYPOGRAPHY & SELECTION
+   ============================================ */
+.mwp-sfe-inline-toolbar *,
+.mwp-sfe-inline-actions *,
+.mwp-sfe-mode-toggle-bar * {
+	font-family: var(--mwp-sfe-font-family) !important;
+}
+
+.mwp-sfe-inline-toolbar *::selection,
+.mwp-sfe-inline-actions *::selection,
+.mwp-sfe-inline-editor *::selection,
+.mwp-sfe-editing-active *::selection,
+.mwp-sfe-inline-comment-textarea *::selection {
+	background-color: var(--mwp-sfe-primary) !important;
+	color: var(--mwp-sfe-text-light) !important;
+}
+
+/* ============================================
+   TOOLBAR & ACTION BAR - CORE STYLES
+   ============================================ */
+.mwp-sfe-inline-toolbar,
+.mwp-sfe-inline-actions,
+.mwp-sfe-inline-preview,
+.mwp-sfe-inline-success,
+.mwp-sfe-inline-pending-wrapper {
+	position: fixed;
+}
+
+.mwp-sfe-inline-toolbar,
+.mwp-sfe-inline-actions,
+.mwp-sfe-inline-preview,
+.mwp-sfe-inline-pending-wrapper {
+	opacity: 1;
+	transition: opacity var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-inline-toolbar {
+	display: inline-flex;
+	flex-wrap: wrap;
+	background: var(--mwp-sfe-bg-darkest);
+	border: 1px solid var(--mwp-sfe-border-dark);
+	border-radius: var(--mwp-sfe-radius-xlarge);
+	padding: var(--mwp-sfe-padding-medium);
+	box-shadow: var(--mwp-sfe-shadow-elevated);
+	animation: mwp-sfe-slide-down var(--mwp-sfe-transition-fast);
+	user-select: none;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	z-index: var(--mwp-sfe-z-toolbar) !important;
+}
+
+.mwp-sfe-inline-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--mwp-sfe-gap-medium);
+	padding: var(--mwp-sfe-padding-medium);
+	background: var(--mwp-sfe-bg-darkest);
+	border: 1px solid var(--mwp-sfe-border-dark);
+	border-radius: var(--mwp-sfe-radius-xlarge);
+	box-shadow: var(--mwp-sfe-shadow-elevated);
+	animation: mwp-sfe-slide-up var(--mwp-sfe-transition-fast);
+	z-index: var(--mwp-sfe-z-actions) !important;
+}
+
+/* ============================================
+   TRANSITION CONTROL
+   ============================================ */
+/* Default: Always transition position, size, and opacity */
+.mwp-sfe-inline-actions,
+.mwp-sfe-inline-toolbar {
+	transition: 
+		var(--mwp-sfe-transition-size), 
+		var(--mwp-sfe-transition-position), 
+		opacity var(--mwp-sfe-transition-fast), 
+		pointer-events 0s ease 0.2s;
+}
+
+/* Suppress position transitions during scroll/resize tracking. */
+.mwp-sfe-inline-actions.mwp-sfe-no-position-transition,
+.mwp-sfe-inline-toolbar.mwp-sfe-no-position-transition {
+	transition: 
+		var(--mwp-sfe-transition-size), 
+		opacity var(--mwp-sfe-transition-fast), 
+		pointer-events 0s ease 0.2s;
+}
+
+/* ============================================
+   TOOLBAR & ACTION BAR - ANIMATIONS
+   ============================================ */
+.mwp-sfe-inline-toolbar.mwp-sfe-closing {
+	animation: mwp-sfe-slide-up-reverse var(--mwp-sfe-transition-fast) forwards;
+}
+
+.mwp-sfe-inline-actions.mwp-sfe-closing {
+	animation: mwp-sfe-slide-down-reverse var(--mwp-sfe-transition-fast) forwards;
+}
+
+@keyframes mwp-sfe-slide-down {
+	from {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes mwp-sfe-slide-up {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes mwp-sfe-slide-down-reverse {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+}
+
+@keyframes mwp-sfe-slide-up-reverse {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+.mwp-sfe-inline-editor .mwp-sfe-btn {
+	cursor: pointer;
+}
+
+.mwp-sfe-btn {
+	position: relative;
+	color: var(--mwp-sfe-text-light);
+	flex: 1;
+	font-size: var(--mwp-sfe-font-size-medium);
+	width: auto;
+	height: var(--mwp-sfe-button-height);
+	line-height: 1;
+	border-radius: var(--mwp-sfe-radius-medium);
+	padding: var(--mwp-sfe-padding-button-v) var(--mwp-sfe-padding-button-h);
+	cursor: pointer;
+	transition: background var(--mwp-sfe-transition-fast);
+	text-wrap: nowrap;
+	z-index: 0;
+}
+
+.mwp-sfe-btn::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: transparent;
+	border-radius: var(--mwp-sfe-radius-small);
+	z-index: -1;
+}
+
+/* Button States */
+.mwp-sfe-btn:disabled {
+	cursor: not-allowed;
+	color: var(--mwp-sfe-text-muted);
+}
+
+.mwp-sfe-btn:disabled:not([mwp-sfe-btn-loading="true"])::before {
+	background: var(--mwp-sfe-black-alpha-25);
+	pointer-events: none;
+}
+
+/* Animated Border for Loading State */
+@supports (background: conic-gradient(from 0deg, red, blue)) {
+	.mwp-sfe-btn[mwp-sfe-btn-loading="true"] {
+		color: var(--mwp-sfe-text-muted);
+		border-color: transparent !important;
+		background: var(--mwp-sfe-bg-light) !important;
+		isolation: isolate; /* Create new stacking context */
+		z-index: 0;
+	}
+
+	.mwp-sfe-btn[mwp-sfe-btn-loading="true"]::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: conic-gradient(
+			from calc(var(--angle) - (var(--spread) * 0.5)),
+			transparent 0deg,
+			var(--mwp-sfe-primary-dark),
+			var(--mwp-sfe-primary),
+			var(--mwp-sfe-primary-darker),
+			transparent var(--spread)
+		);
+		animation: syncRotate 1s linear infinite;
+		z-index: -2;
+		border-radius: inherit;
+	}
+
+	.mwp-sfe-btn[mwp-sfe-btn-loading="true"]::after {
+		content: '';
+		position: absolute;
+		inset: 2px; /* Inner thick border spacing */
+		background: var(--mwp-sfe-bg-light) !important;
+		border-radius: var(--mwp-sfe-radius-small);
+		z-index: -1;
+	}
+
+	/* Inner backgrounds based on button type to preserve button styles */
+	.mwp-sfe-btn-primary-inline[mwp-sfe-btn-loading="true"]::after,
+	.mwp-sfe-btn-save-inline[mwp-sfe-btn-loading="true"]::after,
+	.mwp-sfe-btn-submit-inline[mwp-sfe-btn-loading="true"]::after {
+		background: linear-gradient(135deg, var(--mwp-sfe-primary-dark) 0%, var(--mwp-sfe-primary-darker) 100%);
+	}
+
+	.mwp-sfe-btn-secondary-inline[mwp-sfe-btn-loading="true"]::after,
+	.mwp-sfe-btn-cancel-inline[mwp-sfe-btn-loading="true"]::after,
+	.mwp-sfe-btn-back-edit[mwp-sfe-btn-loading="true"]::after,
+	.mwp-sfe-btn-close-pending[mwp-sfe-btn-loading="true"]::after {
+		background: var(--mwp-sfe-bg-light);
+	}
+}
+
+/* Primary Buttons */
+@property --mwp-sfe-btn-grad-start {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: #2196F3;
+}
+
+@property --mwp-sfe-btn-grad-end {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: #1976D2;
+}
+
+/* Primary Buttons */
+.mwp-sfe-btn-primary-inline,
+.mwp-sfe-btn-save-inline,
+.mwp-sfe-btn-submit-inline {
+	--mwp-sfe-btn-grad-start: var(--mwp-sfe-primary);
+	--mwp-sfe-btn-grad-end: var(--mwp-sfe-primary-dark);
+
+	background: linear-gradient(
+		135deg,
+		var(--mwp-sfe-btn-grad-start) 0%,
+		var(--mwp-sfe-btn-grad-end) 100%
+	);
+
+	border: 1px solid var(--mwp-sfe-primary-darker);
+
+	transition:
+		--mwp-sfe-btn-grad-start var(--mwp-sfe-transition-fast),
+		--mwp-sfe-btn-grad-end var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-btn-primary-inline:hover,
+.mwp-sfe-btn-save-inline:hover,
+.mwp-sfe-btn-submit-inline:hover {
+	--mwp-sfe-btn-grad-start: var(--mwp-sfe-primary-dark);
+	--mwp-sfe-btn-grad-end: var(--mwp-sfe-primary-darker);
+}
+
+.mwp-sfe-btn-primary-inline:disabled,
+.mwp-sfe-btn-save-inline:disabled,
+.mwp-sfe-btn-submit-inline:disabled {
+	--mwp-sfe-btn-grad-start: var(--mwp-sfe-primary-dark);
+	--mwp-sfe-btn-grad-end: var(--mwp-sfe-primary-darker);
+}
+
+/* Secondary Buttons */
+.mwp-sfe-btn-secondary-inline,
+.mwp-sfe-btn-cancel-inline,
+.mwp-sfe-btn-back-edit,
+.mwp-sfe-btn-close-pending {
+	background: var(--mwp-sfe-bg-medium);
+	border: 1px solid var(--mwp-sfe-border-medium);
+}
+
+.mwp-sfe-btn-secondary-inline:hover,
+.mwp-sfe-btn-cancel-inline:hover,
+.mwp-sfe-btn-back-edit:hover,
+.mwp-sfe-btn-close-pending:hover {
+	background: var(--mwp-sfe-bg-light);
+	border: 1px solid var(--mwp-sfe-border-medium);
+}
+
+.mwp-sfe-btn-secondary-inline:disabled,
+.mwp-sfe-btn-cancel-inline:disabled,
+.mwp-sfe-btn-back-edit:disabled,
+.mwp-sfe-btn-close-pending:disabled {
+	background: var(--mwp-sfe-bg-light);
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-btn:focus {
+	outline: 2px solid var(--mwp-sfe-primary);
+	outline-offset: 2px;
+}
+
+/* ============================================
+   SUCCESS MESSAGE
+   ============================================ */
+.mwp-sfe-inline-success {
+	position: fixed !important;
+	top: 25% !important;
+	left: 50% !important;
+	transform: translate(-50%, -50%) !important;
+	width: min(600px, 95vw) !important;
+	z-index: var(--mwp-sfe-z-success) !important;
+	margin: 0 !important;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	width: auto;
+	padding: 16px 24px;
+	background: linear-gradient(135deg, var(--mwp-sfe-success) 0%, var(--mwp-sfe-success-dark) 100%);
+	border-radius: var(--mwp-sfe-radius-xlarge);
+	box-shadow: var(--mwp-sfe-shadow-success);
+	animation: mwp-sfe-success-in 0.25s ease;
+	transition: none !important;
+}
+
+/* Discard / deny variant */
+.mwp-sfe-inline-discard {
+	background: linear-gradient(135deg, var(--mwp-sfe-failure) 0%, var(--mwp-sfe-failure-dark) 100%) !important;
+	box-shadow: var(--mwp-sfe-shadow-failure) !important;
+}
+
+/* Draft submit / warning variant */
+.mwp-sfe-inline-warning {
+	background: linear-gradient(135deg, var(--mwp-sfe-warning) 0%, var(--mwp-sfe-warning-dark) 100%) !important;
+	box-shadow: var(--mwp-sfe-shadow-warning) !important;
+}
+
+/* Comment submit / comment variant */
+.mwp-sfe-inline-comment {
+	background: linear-gradient(135deg, var(--mwp-sfe-primary-dark) 0%, var(--mwp-sfe-primary-darker) 100%) !important;
+	box-shadow: var(--mwp-sfe-shadow-comment) !important;
+}
+
+.mwp-sfe-inline-success-message,
+.mwp-sfe-inline-preview,
+.mwp-sfe-inline-pending-wrapper {
+	z-index: var(--mwp-sfe-z-success) !important;
+}
+
+@keyframes mwp-sfe-success-in {
+	from {
+		opacity: 0;
+		transform: translateY(-10px) scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+.mwp-sfe-inline-success-message {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: var(--mwp-sfe-gap-medium);
+}
+
+.mwp-sfe-inline-success-message svg {
+	width: var(--mwp-sfe-success-icon-size);
+	height: var(--mwp-sfe-success-icon-size);
+	stroke: var(--mwp-sfe-text-light);
+	animation: mwp-sfe-check-draw 0.5s ease 0.2s;
+	flex-shrink: 0;
+}
+
+.mwp-sfe-inline-success-message span {
+	font-family: var(--mwp-sfe-font-family) !important;
+	width: 100%;
+	color: var(--mwp-sfe-text-light);
+	font-size: var(--mwp-sfe-font-size-medium);
+}
+
+@keyframes mwp-sfe-check-draw {
+	from {
+		stroke-dasharray: 100;
+		stroke-dashoffset: 100;
+	}
+	to {
+		stroke-dasharray: 100;
+		stroke-dashoffset: 0;
+	}
+}
+
+/* ============================================
+   SINGLE-ELEMENT SELECTION
+   ============================================ */
+.mwp-sfe-single-element-row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-small);
+}
+
+.mwp-sfe-single-element-header {
+	font-size: var(--mwp-sfe-font-size-tiny);
+	color: var(--mwp-sfe-text-muted);
+	margin-bottom: var(--mwp-sfe-gap-tiny);
+	line-height: 1.2;
+}
+
+.mwp-sfe-single-element-buttons {
+	display: flex;
+	gap: var(--mwp-sfe-gap-medium);
+	flex-wrap: wrap;
+}
+
+/* ============================================
+   MULTI-ELEMENT SELECTION
+   ============================================ */
+.mwp-sfe-multi-element-wrapper {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-medium);
+	width: 100%;
+}
+
+.mwp-sfe-multi-element-container {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-small);
+	width: 100%;
+}
+
+.mwp-sfe-multi-element-row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-small);
+	padding: var(--mwp-sfe-padding-small);
+	border: 2px solid transparent;
+	border-radius: var(--mwp-sfe-radius-large);
+	transition: border-color var(--mwp-sfe-transition-fast), background-color var(--mwp-sfe-transition-fast);
+	cursor: pointer;
+}
+
+.mwp-sfe-multi-element-row:hover {
+	background-color: var(--mwp-sfe-primary-alpha-10);
+}
+
+.mwp-sfe-multi-element-row.mwp-sfe-focused {
+	border-color: var(--mwp-sfe-primary);
+	background-color: var(--mwp-sfe-primary-alpha-10);
+}
+
+.mwp-sfe-multi-element-header {
+	font-size: var(--mwp-sfe-font-size-tiny);
+	color: var(--mwp-sfe-text-muted);
+	margin-bottom: var(--mwp-sfe-gap-tiny);
+	line-height: 1.2;
+}
+
+.mwp-sfe-multi-element-buttons {
+	display: flex;
+	gap: var(--mwp-sfe-gap-medium);
+	flex-wrap: wrap;
+}
+
+.mwp-sfe-multi-element-instructions {
+	font-size: var(--mwp-sfe-font-size-tiny);
+	color: var(--mwp-sfe-text-muted);
+	text-align: center;
+	padding-top: var(--mwp-sfe-gap-small);
+	border-top: 1px solid var(--mwp-sfe-border-dark);
+	line-height: 1.4;
+}
+
+/* ============================================
+   COMMENT FORM
+   ============================================ */
+.mwp-sfe-inline-actions .mwp-sfe-inline-comment-form {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-medium);
+	width: 300px;
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-inline-comment-textarea {
+	width: auto;
+	resize: vertical;
+	height: 120px;
+	min-height: 60px;
+	max-height: 360px;
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-inline-comment-actions,
+.mwp-sfe-inline-actions .mwp-sfe-inline-media-upload-actions {
+	display: flex;
+	gap: var(--mwp-sfe-gap-medium);
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-text-entry {
+	line-height: 1.5;
+	background: var(--mwp-sfe-bg-dark);
+	border: 1px solid var(--mwp-sfe-border-medium);
+	outline: none !important;
+	color: var(--mwp-sfe-text-light);
+	padding: var(--mwp-sfe-padding-medium);
+	border-radius: var(--mwp-sfe-radius-medium);
+	font-size: var(--mwp-sfe-font-size-medium);
+	box-shadow: inset var(--mwp-sfe-shadow-light);
+	transition: background var(--mwp-sfe-transition-instant), box-shadow var(--mwp-sfe-transition-instant), border-color var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-text-entry:focus {
+	border-color: var(--mwp-sfe-primary);
+	background: var(--mwp-sfe-bg-light);
+	color: var(--mwp-sfe-text-light);
+	box-shadow: inset var(--mwp-sfe-shadow-medium);
+}
+
+/* ============================================
+   MEDIA EDITOR
+   ============================================ */
+.mwp-sfe-inline-actions .mwp-sfe-inline-media-editor {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-medium);
+	width: 300px;
+}
+
+/* Drop Zone */
+.mwp-sfe-inline-actions .mwp-sfe-media-upload-drop-zone {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	cursor: pointer;
+	line-height: 1.5;
+	text-align: center;
+	height: 150px;
+	background: var(--mwp-sfe-bg-dark);
+	border: 2px dashed var(--mwp-sfe-border-medium);
+	color: var(--mwp-sfe-text-light);
+	padding: var(--mwp-sfe-gap-large);
+	border-radius: var(--mwp-sfe-radius-large);
+	font-size: var(--mwp-sfe-font-size-large);
+	z-index: 0;
+	isolation: isolate;
+	overflow: hidden;
+	box-shadow: inset var(--mwp-sfe-shadow-light);
+	transition: background var(--mwp-sfe-transition-instant), box-shadow var(--mwp-sfe-transition-instant), border-color var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-media-upload-drop-zone:focus,
+.mwp-sfe-inline-actions .mwp-sfe-media-upload-drop-zone:hover {
+	border-color: var(--mwp-sfe-primary);
+	background: var(--mwp-sfe-bg-light);
+	box-shadow: inset var(--mwp-sfe-shadow-medium);
+	transition: background var(--mwp-sfe-transition-instant), box-shadow var(--mwp-sfe-transition-instant), border-color var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-media-upload-drop-zone.mwp-sfe-is-dragging:hover,
+.mwp-sfe-media-upload-drop-zone.mwp-sfe-is-uploading:hover {
+	border-style: solid;
+	background: var(--mwp-sfe-bg-light) !important;
+	box-shadow: inset var(--mwp-sfe-shadow-medium);
+	cursor: default;
+}
+
+.mwp-sfe-media-upload-drop-zone.mwp-sfe-is-dragging,
+.mwp-sfe-media-upload-drop-zone.mwp-sfe-is-uploading {
+	border-style: solid;
+	background: var(--mwp-sfe-bg-light);
+	box-shadow: inset var(--mwp-sfe-shadow-medium);
+	animation: pulseBorder 1.5s infinite;
+}
+
+@keyframes pulseBorder {
+	0% { border-color: var(--mwp-sfe-border-medium); }
+	50% { border-color: var(--mwp-sfe-primary); }
+	100% { border-color: var(--mwp-sfe-border-medium); }
+}
+
+/* Animated Upload Border */
+@supports (background: conic-gradient(from 0deg, red, blue)) {
+	.mwp-sfe-media-upload-drop-zone.mwp-sfe-is-uploading {
+		border: none;
+		pointer-events: none;
+		padding: 22px;
+	}
+
+	@property --spread {
+		syntax: '<angle>';
+		initial-value: 270deg;
+		inherits: false;
+	}
+
+	@property --angle {
+		syntax: '<angle>';
+		initial-value: 0deg;
+		inherits: false;
+	}
+
+	.mwp-sfe-media-upload-drop-zone.mwp-sfe-is-uploading::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: conic-gradient(
+			from calc(var(--angle) - (var(--spread) * 0.5)),
+			transparent 0deg,
+			var(--mwp-sfe-primary-dark),
+			var(--mwp-sfe-primary),
+			var(--mwp-sfe-primary-darker),
+			transparent var(--spread)
+		);
+		animation: syncRotate 1.5s linear infinite;
+		z-index: -2;
+	}
+
+	.mwp-sfe-media-upload-drop-zone.mwp-sfe-is-uploading::after {
+		content: '';
+		position: absolute;
+		inset: 2px;
+		background: var(--mwp-sfe-bg-light);
+		border-radius: var(--mwp-sfe-radius-small);
+		z-index: -1;
+	}
+
+	@keyframes syncRotate {
+		0% { 
+			--angle: 0deg;
+			--spread: 270deg; 
+		}
+		25% { 
+			--angle: 90deg;
+			--spread: 180deg; 
+		}
+		50% { 
+			--angle: 180deg;
+			--spread: 270deg; 
+		}
+		75% { 
+			--angle: 270deg;
+			--spread: 180deg; 
+		}
+		100% { 
+			--angle: 360deg;
+			--spread: 270deg; 
+		}
+	}
+}
+
+/* ============================================
+   MEDIA LIBRARY
+   ============================================ */
+.mwp-sfe-inline-media-library {
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-medium);
+	width: 300px;
+}
+
+.mwp-sfe-media-library-header {
+	font-size: var(--mwp-sfe-font-size-medium);
+	color: var(--mwp-sfe-text-light);
+}
+
+.mwp-sfe-media-library-message {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	height: 300px;
+	color: var(--mwp-sfe-text-muted);
+	padding: var(--mwp-sfe-gap-large);
+}
+
+.mwp-sfe-media-library-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+	grid-auto-rows: max-content;
+	gap: var(--mwp-sfe-gap-medium);
+	overflow-y: auto;
+	background: var(--mwp-sfe-bg-dark);
+	border: 1px solid var(--mwp-sfe-border-medium);
+	border-radius: var(--mwp-sfe-radius-large);
+	min-height: 300px;
+	max-height: 301px;
+	padding: var(--mwp-sfe-padding-medium);
+	scrollbar-color: var(--mwp-sfe-bg-darkest) var(--mwp-sfe-bg-light);
+}
+
+.mwp-sfe-media-library-item {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 1;
+	background: var(--mwp-sfe-bg-darkest);
+	border: 2px solid var(--mwp-sfe-border-medium);
+	border-radius: var(--mwp-sfe-radius-medium);
+	cursor: pointer;
+	overflow: hidden;
+	transition: all var(--mwp-sfe-transition-fast);
+	display: flex;
+	flex-direction: column;
+}
+
+.mwp-sfe-media-library-item:hover,
+.mwp-sfe-media-library-item:focus {
+	border-color: var(--mwp-sfe-primary);
+	transform: scale(1.05);
+	outline: none;
+}
+
+.mwp-sfe-media-library-item img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.mwp-sfe-media-library-placeholder {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--mwp-sfe-bg-darkest);
+}
+
+.mwp-sfe-media-library-item-title {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background: var(--mwp-sfe-black-alpha-80);
+	color: var(--mwp-sfe-text-light);
+	font-size: var(--mwp-sfe-font-size-tiny);
+	padding: var(--mwp-sfe-padding-small);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* ============================================
+   RICH TEXT EDITOR TOOLBAR
+   ============================================ */
+.mwp-sfe-editor-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--mwp-sfe-gap-medium);
+}
+
+.mwp-sfe-editor-content {
+	outline: none;
+	word-break: break-word;
+}
+
+.mwp-sfe-list-item-text {
+	display: inline;
+	min-width: 1px;
+}
+
+.mwp-sfe-ghost-component {
+	display: none !important;
+}
+
+.mwp-sfe-editable-component.mwp-sfe-ghost-component {
+	cursor: text;
+	display: block !important;
+}
+
+body.mwp-sfe-preview-mode .mwp-sfe-ghost-component,
+body.mwp-sfe-active-preview .mwp-sfe-ghost-component {
+	display: none !important;
+}
+
+/* Preview should reflect front-end output: never render placeholder UI/text. */
+body.mwp-sfe-preview-mode .mwp-sfe-rich-text-placeholder,
+body.mwp-sfe-active-preview .mwp-sfe-rich-text-placeholder {
+	display: none !important;
+}
+
+body.mwp-sfe-preview-mode .mwp-sfe-rich-text-placeholder::after,
+body.mwp-sfe-active-preview .mwp-sfe-rich-text-placeholder::after {
+	content: none !important;
+}
+
+.mwp-sfe-rich-text-has-placeholder > .mwp-sfe-rich-text-placeholder,
+.mwp-sfe-rich-text-has-placeholder li > .mwp-sfe-rich-text-placeholder,
+.mwp-sfe-editable-component > .mwp-sfe-rich-text-placeholder,
+.mwp-sfe-editor-content > .mwp-sfe-rich-text-placeholder,
+body.mwp-sfe-is-editing .mwp-sfe-element-active .mwp-sfe-rich-text-placeholder {
+	pointer-events: none !important;
+	user-select: none !important;
+	-webkit-user-select: none !important;
+	-moz-user-select: none !important;
+	-ms-user-select: none !important;
+}
+
+.mwp-sfe-rich-text-has-placeholder > .mwp-sfe-rich-text-placeholder::after,
+.mwp-sfe-rich-text-has-placeholder li > .mwp-sfe-rich-text-placeholder::after,
+.mwp-sfe-editable-component > .mwp-sfe-rich-text-placeholder::after,
+.mwp-sfe-editor-content > .mwp-sfe-rich-text-placeholder::after,
+body.mwp-sfe-is-editing .mwp-sfe-element-active .mwp-sfe-rich-text-placeholder::after {
+	content: attr(data-rich-text-placeholder);
+	opacity: 0.62;
+}
+
+/* ============================================
+   BUTTON GROUPS
+   ============================================ */
+.mwp-sfe-editor-toolbar .mwp-sfe-btn-group {
+	display: flex;
+	vertical-align: middle;
+	gap: var(--mwp-sfe-gap-tiny);
+}
+
+/* ============================================
+   EDITOR BUTTONS
+   ============================================ */
+.mwp-sfe-editor-toolbar .mwp-sfe-editor-btn {
+	display: inline-block;
+	width: var(--mwp-sfe-button-size);
+	height: var(--mwp-sfe-button-size);
+	padding: var(--mwp-sfe-padding-editor-btn);
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: var(--mwp-sfe-radius-medium);
+	cursor: pointer;
+	transition: 
+		opacity var(--mwp-sfe-transition-instant),
+		background var(--mwp-sfe-transition-fast),
+		border-color var(--mwp-sfe-transition-fast);
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-editor-btn svg {
+	float: left;
+	margin: -1px;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-editor-btn:hover {
+	background: var(--mwp-sfe-primary-alpha-25);
+	border-color: transparent;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-editor-btn.mwp-sfe-editor-btn-active {
+	background: var(--mwp-sfe-primary-alpha-25);
+	border-color: var(--mwp-sfe-primary-alpha-25);
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-editor-btn:disabled {
+	opacity: 0.5;
+	background: none;
+	cursor: auto;
+}
+
+/* Text-Based Buttons */
+.mwp-sfe-editor-toolbar .mwp-sfe-editor-btn-text {
+	color: var(--mwp-sfe-text-light);
+	font-size: var(--mwp-sfe-font-size-medium);
+	line-height: 1;
+	white-space: nowrap;
+	width: 100%;
+	padding: 0 6px;
+}
+
+/* ============================================
+   DROPDOWNS
+   ============================================ */
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown {
+	position: relative;
+	display: block;
+	width: var(--mwp-sfe-button-size);
+	height: var(--mwp-sfe-button-size);
+	z-index: var(--mwp-sfe-z-dropdown);
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-content {
+	display: none;
+	position: absolute;
+	font-size: var(--mwp-sfe-font-size-medium);
+	margin-top: -1px;
+	top: 100%;
+	left: 0;
+	background: var(--mwp-sfe-bg-darkest);
+	border: 1px solid var(--mwp-sfe-border-dark);
+	border-radius: var(--mwp-sfe-radius-medium);
+	box-shadow: 0 4px 12px var(--mwp-sfe-black-alpha-40);
+	padding: var(--mwp-sfe-padding-small);
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-content.mwp-sfe-show {
+	display: block;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-content button {
+	height: var(--mwp-sfe-button-inner-size);
+	width: var(--mwp-sfe-button-inner-size);
+	padding: 2px var(--mwp-sfe-padding-small);
+	border-radius: var(--mwp-sfe-radius-small);
+	cursor: pointer;
+}
+
+/* Heading Level Dropdown */
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level {
+	width: 96px;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level .mwp-sfe-dropdown-content.mwp-sfe-show {
+	min-width: 100%;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level .mwp-sfe-dropdown-toggle {
+	position: absolute;
+	display: flex;
+	align-items: center;
+	width: 100%;
+	padding-left: 6px;
+	cursor: pointer;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level button {
+	display: block;
+	color: var(--mwp-sfe-text-light);
+	font-size: var(--mwp-sfe-font-size-medium);
+	line-height: 1.65;
+	white-space: nowrap;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level .mwp-sfe-dropdown-content button {
+	width: 100%;
+	height: 100%;
+	min-height: var(--mwp-sfe-button-inner-size);
+	text-align: left;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level .mwp-sfe-dropdown-toggle span {
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level .mwp-sfe-dropdown-toggle svg {
+	position: relative;
+	width: var(--mwp-sfe-icon-size);
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level [data-format="Heading 1"] {
+	font-size: 2em !important;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level [data-format="Heading 2"] {
+	font-size: 1.7em !important;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level [data-format="Heading 3"] {
+	font-size: 1.4em !important;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level [data-format="Heading 4"] {
+	font-size: 1.2em !important;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level [data-format="Heading 5"] {
+	font-size: 1em !important;
+}
+
+.mwp-sfe-editor-toolbar .mwp-sfe-dropdown-heading-level [data-format="Heading 6"] {
+	font-size: .8em !important;
+}
+
+/* ============================================
+   LINK TOOLTIP / UI
+   ============================================ */
+.mwp-sfe-link-ui-wrapper *::selection {
+	background-color: var(--mwp-sfe-primary);
+	color: var(--mwp-sfe-text-light);
+}
+
+.mwp-sfe-link-ui-wrapper span.mwp-sfe-link-preview-wrap {
+	align-content: center;
+}
+
+.mwp-sfe-link-ui-wrapper a {
+	color: var(--mwp-sfe-primary);
+}
+
+.mwp-sfe-link-ui-wrapper a:hover {
+	color: var(--mwp-sfe-primary-dark);
+}
+
+.mwp-sfe-link-ui-wrapper {
+	width: auto;
+}
+
+.mwp-sfe-link-edit {
+	flex-wrap: wrap;
+	gap: var(--mwp-sfe-gap-medium);
+}
+
+.mwp-sfe-link-view {
+	flex-wrap: wrap;
+	color: var(--mwp-sfe-text-light);
+	font-size: var(--mwp-sfe-font-size-medium);
+	gap: var(--mwp-sfe-gap-medium);
+	height: min-content;
+}
+
+.mwp-sfe-link-view span {
+	line-height: 1;
+}
+
+.mwp-sfe-link-preview {
+	line-height: 1;
+	align-self: center;
+}
+
+.mwp-sfe-link-actions {
+	display: flex;
+	gap: var(--mwp-sfe-gap-medium);
+}
+
+.mwp-sfe-link-url {
+	display: flex;
+	flex-direction: column;
+	width: 180px;
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-link-url-entry {
+	line-height: 1 !important;
+	height: auto !important;
+	width: auto !important;
+	background: var(--mwp-sfe-bg-dark) !important;
+	border: 1px solid var(--mwp-sfe-border-medium) !important;
+	outline: none !important;
+	color: var(--mwp-sfe-text-light) !important;
+	padding: var(--mwp-sfe-padding-small) !important;
+	border-radius: var(--mwp-sfe-radius-medium) !important;
+	padding-right: 0 !important;
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-link-url-entry:focus {
+	border-color: var(--mwp-sfe-primary) !important;
+	background: var(--mwp-sfe-bg-light) !important;
+	color: var(--mwp-sfe-text-light) !important;
+}
+
+.mwp-sfe-inline-actions .mwp-sfe-link-url-entry *::selection {
+	background-color: var(--mwp-sfe-primary) !important;
+	color: var(--mwp-sfe-text-light) !important;
+}
+
+.mwp-sfe-link-options {
+	display: flex;
+	flex-direction: row;
+	gap: var(--mwp-sfe-gap-medium);
+	margin-top: var(--mwp-sfe-gap-medium);
+	font-size: var(--mwp-sfe-font-size-small);
+	color: var(--mwp-sfe-text-light);
+}
+
+.mwp-sfe-link-options label {
+	line-height: 1;
+	margin: 0;
+}
+
+/* ============================================
+   SVG ICON STYLES
+   ============================================ */
+.mwp-sfe-fill {
+	fill: var(--mwp-sfe-text-light);
+}
+
+.mwp-sfe-stroke {
+	stroke: var(--mwp-sfe-text-light);
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 2;
+	fill: none;
+}
+
+.mwp-sfe-thin {
+	stroke-width: 1;
+}
+
+/* ============================================
+   MODE TOGGLE BAR
+   ============================================ */
+.mwp-sfe-mode-toggle-bar {
+	position: fixed;
+	top: 42px;
+	right: 10px;
+	z-index: var(--mwp-sfe-z-mode-toggle);
+	display: flex;
+	flex-direction: column;
+	gap: var(--mwp-sfe-gap-small);
+	padding: var(--mwp-sfe-padding-medium);
+	background: var(--mwp-sfe-bg-darkest);
+	border: 1px solid var(--mwp-sfe-border-dark);
+	border-radius: var(--mwp-sfe-radius-xlarge);
+	box-shadow: var(--mwp-sfe-shadow-elevated);
+	font-family: var(--mwp-sfe-font-family) !important;
+	animation: mwp-sfe-slide-up var(--mwp-sfe-transition-fast);
+	user-select: none;
+	-webkit-user-select: none;
+	overflow: visible;
+}
+
+.mwp-sfe-mode-toggle-header {
+	font-size: var(--mwp-sfe-font-size-tiny);
+	color: var(--mwp-sfe-text-muted);
+	line-height: 1.2;
+	margin-bottom: var(--mwp-sfe-gap-tiny);
+}
+
+.mwp-sfe-mode-toggle-buttons {
+	display: flex;
+	gap: var(--mwp-sfe-gap-medium);
+}
+
+/* Make toggle bar buttons non-flex-grow so they size to content */
+.mwp-sfe-mode-toggle-buttons .mwp-sfe-btn {
+	flex: 0 0 auto;
+}
+
+/* ============================================
+   GRIP BAR
+   ============================================ */
+.mwp-sfe-grip-bar {
+	position: fixed;
+	display: inline-grid;
+	grid-auto-flow: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--mwp-sfe-gap-small);
+	width: 52px;
+	height: 18px;
+	padding: 0 8px;
+	opacity: 0;
+	transform: translate(-50%, 0);
+	transform-origin: center bottom;
+	transition:
+		opacity var(--mwp-sfe-transition-fast) 0.5s,
+		transform var(--mwp-sfe-transition-fast) 0.5s;
+	cursor: grab;
+	touch-action: none;
+	z-index: calc(var(--mwp-sfe-z-mode-toggle) - 1);
+}
+
+.mwp-sfe-grip-bar-dot {
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--mwp-sfe-text-muted);
+}
+
+.mwp-sfe-grip-bar[data-mwp-sfe-grip-owner="mode-toggle-bar"] {
+	border: 1px solid var(--mwp-sfe-border-dark);
+	border-bottom: none;
+	border-radius: var(--mwp-sfe-radius-xlarge) var(--mwp-sfe-radius-xlarge) 0 0;
+	background: var(--mwp-sfe-bg-darkest);
+	box-shadow: var(--mwp-sfe-shadow-elevated);
+}
+
+.mwp-sfe-grip-bar.mwp-sfe-is-visible {
+	opacity: 1;
+	transform: translate(-50%, -100%);
+	transition-delay: 0s;
+}
+
+.mwp-sfe-grip-bar.mwp-sfe-is-dragging {
+	cursor: grabbing;
+}
+
+.mwp-sfe-grip-bar.mwp-sfe-is-dragging:hover {
+	transition: none;
+}
+
+/* ============================================
+   ACTION BAR DOCK STATE
+   ============================================ */
+.mwp-sfe-inline-actions.mwp-sfe-state-dock {
+	/* Sit on the same z-layer as the mode-toggle bar so it visually groups
+	   with it and renders above page content. */
+	z-index: var(--mwp-sfe-z-mode-toggle) !important;
+	transition: opacity var(--mwp-sfe-transition-fast);
+}
+
+/* ============================================
+   PREVIEW MODE (global - no active editor)
+   ============================================ */
+body.mwp-sfe-preview-mode .mwp-sfe-overlay-container,
+body.mwp-sfe-preview-mode .mwp-sfe-inline-preview,
+body.mwp-sfe-preview-mode .mwp-sfe-inline-pending-wrapper,
+body.mwp-sfe-preview-mode .mwp-sfe-inline-actions,
+body.mwp-sfe-preview-mode .mwp-sfe-inline-toolbar {
+	opacity: 0 !important;
+	pointer-events: none !important;
+	transition: opacity var(--mwp-sfe-transition-fast) !important;
+}
+
+body.mwp-sfe-preview-mode [data-mwp-sfe-bound="1"],
+body.mwp-sfe-preview-mode [data-mwp-sfe-bound="1"] *,
+body.mwp-sfe-preview-mode .mwp-sfe-editing-disabled,
+body.mwp-sfe-preview-mode .mwp-sfe-editing-disabled * {
+	cursor: auto !important;
+}
+
+/* ============================================
+   ACTIVE PREVIEW MODE (editor open but previewing)
+   The editor is kept alive; only the editing UI
+   is hidden and the active element is locked down.
+   The .mwp-sfe-is-editing body class keeps
+   everything else non-interactive.
+   ============================================ */
+body.mwp-sfe-active-preview .mwp-sfe-overlay-container,
+body.mwp-sfe-active-preview .mwp-sfe-inline-toolbar,
+body.mwp-sfe-active-preview .mwp-sfe-inline-actions {
+	opacity: 0 !important;
+	pointer-events: none !important;
+	transition: opacity var(--mwp-sfe-transition-fast) !important;
+}
+
+/* Keep active editor locked down. */
+body.mwp-sfe-active-preview .mwp-sfe-element-active,
+body.mwp-sfe-active-preview .mwp-sfe-element-active *,
+body.mwp-sfe-active-preview .mwp-sfe-inline-toolbar *,
+body.mwp-sfe-active-preview .mwp-sfe-inline-actions * {
+	pointer-events: none !important;
+}
+
+/* In active preview, restore normal page interactions except editor chrome. */
+body.mwp-sfe-active-preview * {
+	pointer-events: auto !important;
+}
+
+/* Push the active element below the editing overlay so clicks
+   pass to the overlay rather than into the contenteditable. */
+body.mwp-sfe-active-preview .mwp-sfe-element-active {
+	z-index: 1 !important;
+}
+
+body.mwp-sfe-active-preview [data-mwp-sfe-bound="1"]:not(.mwp-sfe-element-active),
+body.mwp-sfe-active-preview [data-mwp-sfe-bound="1"]:not(.mwp-sfe-element-active) *,
+body.mwp-sfe-active-preview .mwp-sfe-editing-disabled,
+body.mwp-sfe-active-preview .mwp-sfe-editing-disabled * {
+	cursor: auto !important;
+}
+
+body.mwp-sfe-preview-mode .mwp-abe-block-sparkle,
+:host-context(body.mwp-sfe-preview-mode) .mwp-abe-launcher,
+:host-context(body.mwp-sfe-preview-mode) .mwp-abe-modal,
+:host-context(body.mwp-sfe-preview-mode) .mwp-abe-drawer,
+body.mwp-sfe-active-preview .mwp-abe-block-sparkle,
+:host-context(body.mwp-sfe-active-preview) .mwp-abe-launcher,
+:host-context(body.mwp-sfe-active-preview) .mwp-abe-modal,
+:host-context(body.mwp-sfe-active-preview) .mwp-abe-drawer {
+	opacity: 0 !important;
+	pointer-events: none !important;
+	transition: opacity var(--mwp-sfe-transition-fast) !important;
+}
+
+:host-context(body.mwp-sfe-preview-mode) .mwp-abe-launcher,
+:host-context(body.mwp-sfe-active-preview) .mwp-abe-launcher {
+	transform: translateY(8px) scale(0.92);
+}
+
+:host-context(body.mwp-sfe-preview-mode) .mwp-abe-drawer,
+:host-context(body.mwp-sfe-active-preview) .mwp-abe-drawer {
+	transform: translateY(24px);
+}
+
+:host-context(body.mwp-sfe-preview-mode) .mwp-abe-modal-panel,
+:host-context(body.mwp-sfe-active-preview) .mwp-abe-modal-panel {
+	opacity: 0 !important;
+	transform: translateY(24px) scale(0.98);
+	pointer-events: none !important;
+	transition: opacity var(--mwp-sfe-transition-fast) !important;
+}

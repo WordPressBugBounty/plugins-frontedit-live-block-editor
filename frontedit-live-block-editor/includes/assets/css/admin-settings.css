@@ -1,0 +1,157 @@
+/**
+ * Base Admin Settings Styles
+ *
+ * Shared admin chrome, base-only settings UI, license status UI, and the
+ * plugin deactivation dialog live here. Pro preview and real pro admin
+ * styles are loaded from their own dedicated stylesheets.
+ *
+ * @package MWPSFE_Manager
+ */
+
+/* ===========================
+   CSS Custom Properties (Root Variables)
+   =========================== */
+:root {
+	/* WordPress Admin Colors */
+	--mwp-sfe-admin-color-primary-light:  #b8d4f1;
+	--mwp-sfe-admin-color-primary:        #2271b1;
+	--mwp-sfe-admin-color-primary-hover:  #135e96;
+	--mwp-sfe-admin-color-success:        #00a32a;
+	--mwp-sfe-admin-color-warning:        #f56e28;
+	--mwp-sfe-admin-color-danger:         #d63638;
+	--mwp-sfe-admin-color-danger-hover:   #b32d2e;
+	--mwp-sfe-admin-color-neutral:        #787c82;
+
+	/* Background Colors */
+	--mwp-sfe-admin-bg-white:   #fff;
+	--mwp-sfe-admin-bg-light:   #f6f7f7;
+	--mwp-sfe-admin-bg-lighter: #f9f9f9;
+	--mwp-sfe-admin-bg-gray:    #f0f0f1;
+	--mwp-sfe-admin-bg-hover:   #e8eaeb;
+	--mwp-sfe-admin-bg-info:    #f0f6fc;
+
+	/* Border Colors */
+	--mwp-sfe-admin-border-main:    #ccd0d4;
+	--mwp-sfe-admin-border-lighter: #f0f0f1;
+	--mwp-sfe-admin-border-light:   #dcdcde;
+	--mwp-sfe-admin-border-medium:  #c3c4c7;
+	--mwp-sfe-admin-border-lt-blue: #b8d4f1;
+
+	/* Text Colors */
+	--mwp-sfe-admin-text-primary:   #1d2327;
+	--mwp-sfe-admin-text-secondary: #50575e;
+	--mwp-sfe-admin-text-tertiary:  #787c82;
+	--mwp-sfe-admin-text-light:     #666;
+	--mwp-sfe-admin-text-body:      #2c3338;
+
+	/* Shadows */
+	--mwp-sfe-admin-shadow-sm: 0 2px 8px rgba(0,0,0,.05);
+	--mwp-sfe-admin-shadow-md: 0 2px 8px rgba(0,0,0,.1);
+	--mwp-sfe-admin-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, .1), 0 4px 6px 0 rgba(0, 0, 0, .05);
+
+	--mwp-sfe-admin-shadow-inset-md: inset var(--mwp-sfe-admin-shadow-md);
+
+	/* Border Radius */
+	--mwp-sfe-admin-radius-xs:   2px;
+	--mwp-sfe-admin-radius-sm:   3px;
+	--mwp-sfe-admin-radius-md:   4px;
+	--mwp-sfe-admin-radius-lg:   6px;
+	--mwp-sfe-admin-radius-xl:   8px;
+	--mwp-sfe-admin-radius-pill: 999px;
+}
+
+/* ===========================
+   Tab Navigation
+   =========================== */
+
+/*
+ * Overrides WordPress default nav-tab-wrapper padding/margin so the
+ * tab border merges cleanly into the content area top border.
+ */
+.mwp-sfe-settings-nav.nav-tab-wrapper {
+	margin-bottom: 0;
+	padding-bottom: 0;
+	border-bottom: 1px solid var(--mwp-sfe-admin-border-medium);
+}
+
+/* ===========================
+   Settings Tab Content Area
+   =========================== */
+
+/*
+ * Sits immediately below .mwp-sfe-settings-nav.
+ * margin-top: 0 prevents a visual gap that would break the tab connection.
+ */
+.mwp-sfe-settings-tab-content {
+	margin-top: 0;
+}
+
+/* -----------------------------------------------------------------------
+   License status badge - inline to the right of the key input
+   ----------------------------------------------------------------------- */
+.mwp-sfe-license-status-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 10px 3px 7px;
+	border-radius: 20px;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	line-height: 1.6;
+	vertical-align: middle;
+}
+
+.mwp-sfe-license-status-dot {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+@keyframes status-dot-pulse {
+	0% {
+		box-shadow: 0 0 0 0px #a8ddb2;
+		scale: 0.9;
+	}
+	50% {
+		box-shadow: 0 0 0 6px rgba(168, 221, 178, 0);
+		scale: 1.1;
+	}
+	100% {
+		scale: 0.9;
+	}
+}
+
+/* Active - green */
+.mwp-sfe-license-status-active {
+	background: #edfaef;
+	color: var(--mwp-sfe-admin-color-success);
+	border: 1px solid #a8ddb2;
+}
+
+.mwp-sfe-license-status-active .mwp-sfe-license-status-dot {
+	background: var(--mwp-sfe-admin-color-success);
+	animation: status-dot-pulse 2s ease-in-out infinite;
+}
+
+/* Inactive / unverified - amber */
+.mwp-sfe-license-status-inactive {
+	background: #fef9ec;
+	color: #7a5a00;
+	border: 1px solid #f0d070;
+}
+
+.mwp-sfe-license-status-inactive .mwp-sfe-license-status-dot {
+	background: #c89a00;
+	box-shadow: 0 0 0 2px #f5e090;
+}
+
+/* Verifying - neutral grey */
+.mwp-sfe-license-status-loading {
+	background: #f6f7f7;
+	color: #50575e;
+	border: 1px solid #ccd0d4;
+}

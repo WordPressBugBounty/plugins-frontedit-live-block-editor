@@ -1,0 +1,28 @@
+img {
+	max-width: 100%;
+	height: auto;
+	display: block;
+	border: 0;
+}
+
+table {
+	border-collapse: collapse;
+	mso-table-lspace: 0;
+	mso-table-rspace: 0;
+}
+
+td,
+th {
+	word-break: break-word;
+	overflow-wrap: anywhere;
+}
+
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	margin: 0 0 .75em;
+}
