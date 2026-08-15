@@ -291,6 +291,7 @@ class MWPSFE_Abilities {
 				'idempotent'  => $idempotent,
 				'destructive' => $destructive,
 			),
+			'public'       => true,
 			'show_in_rest' => true,
 		);
 	}

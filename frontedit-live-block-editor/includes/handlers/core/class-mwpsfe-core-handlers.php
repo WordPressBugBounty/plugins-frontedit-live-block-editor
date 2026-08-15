@@ -1077,6 +1077,19 @@ abstract class MWPSFE_Abstract_Text_Edit_Handler extends MWPSFE_Abstract_Edit_Ha
 	public function content_type() { return 'text'; }
 
 	/**
+	 * Determine whether a registered block supports a specific block-support feature.
+	 *
+	 * @param string       $block_name   Registered block name.
+	 * @param string|array $support_path Feature slug or nested feature path.
+	 * @return bool
+	 */
+	protected function registered_block_has_support( $block_name, $support_path ) {
+		$block_type = \WP_Block_Type_Registry::get_instance()->get_registered( $block_name );
+
+		return \block_has_support( $block_type, $support_path, false );
+	}
+
+	/**
 	 * JSON handlers receive a structured block payload from the frontend, not freeform text.
 	 * Returning it untouched ensures json_decode() in update_block_content works correctly.
 	 * Do NOT call an HTML sanitizer here - it will corrupt valid JSON.
@@ -2861,6 +2874,18 @@ class MWPSFE_Handler_Core_Pullquote extends MWPSFE_Abstract_Text_Edit_Handler im
 	 * @return array
 	 */
 	public function get_schema_definition() {
+		// WordPress 7.1 migrated core/pullquote text alignment from the legacy
+		// top-level `textAlign` attribute to the canonical
+		// `style.typography.textAlign` block-support path.
+		//
+		// TODO: Once FrontEdit drops support for WordPress versions that use the
+		// legacy Pullquote attribute, remove this compatibility check and use
+		// `style.typography.textAlign` directly.
+		$uses_text_align_block_support = $this->registered_block_has_support(
+			'core/pullquote',
+			array( 'typography', 'textAlign' )
+		);
+
 		$inline_format_capabilities = $this->get_inline_format_capabilities( array( 'bold', 'italic', 'strikethrough', 'link' ) );
 		$attribute_capabilities     = array(
 			'align' => array(
@@ -2869,8 +2894,10 @@ class MWPSFE_Handler_Core_Pullquote extends MWPSFE_Abstract_Text_Edit_Handler im
 				'unsetValue' => 'none',
 			),
 			'textAlignment' => array(
-				'attribute'  => 'textAlign',
-				'values'     => array( 'left', 'center', 'right' ),
+				'attribute' => $uses_text_align_block_support
+					? 'style.typography.textAlign'
+					: 'textAlign',
+				'values' => array( 'left', 'center', 'right' ),
 			),
 		);
 

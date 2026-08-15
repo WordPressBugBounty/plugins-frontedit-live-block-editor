@@ -10,7 +10,7 @@
  *
  * Plugin Name:       FrontEdit - Live Frontend Block Editor
  * Description:       Transform your frontend pages into a lightweight, live block editor. Update text, images, alignment, and more.
- * Version:           1.1.0
+ * Version:           1.1.2
  * Plugin URI:        https://maintainwp.com/products/frontedit/
  * Author:            MaintainWP
  * Author URI:        https://maintainwp.com
@@ -41,7 +41,7 @@ define( 'MWPSFE_MENU_SLUG',      'mwpsfe-manager' );  // Top-level menu page slu
 define( 'MWPSFE_SETTINGS_SLUG',  'mwpsfe-settings' ); // Settings submenu page slug
 define( 'MWPSFE_REQUESTS_SLUG',  'mwpsfe-requests' ); // Requests submenu page slug
 define( 'MWPSFE_CATALOG_SLUG',   'mwpsfe-catalog' );  // Catalog submenu page slug
-define( 'MWPSFE_VERSION',        (string) ( $mwpsfe_plugin_data['Version'] ?? '1.1.0' ) );
+define( 'MWPSFE_VERSION',        (string) ( $mwpsfe_plugin_data['Version'] ?? '1.1.2' ) );
 define( 'MWPSFE_DB_VERSION',     '1.0' );
 define( 'MWPSFE_MIN_WP_VERSION', '7.0' );
 

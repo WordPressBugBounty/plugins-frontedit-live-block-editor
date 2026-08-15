@@ -879,7 +879,6 @@
 				throw new Error('Icon Library URL is not configured.');
 			}
 			const iconLibraryRequestUrl = new URL(iconLibraryUrl, window.location.href);
-			iconLibraryRequestUrl.searchParams.set('per_page', '100');
 			iconLibraryRequestUrl.searchParams.set('context', 'view');
 			const response = await fetch(iconLibraryRequestUrl.toString(), {
 				headers: { 'X-WP-Nonce': SFE.ManagerData.nonce },

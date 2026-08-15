@@ -1,14 +1,14 @@
 === FrontEdit - Live Frontend Block Editor ===
 Contributors: maintainwp
-Tags: frontend editor, frontend editing, gutenberg, block editor, inline editor
+Tags: frontend editor, front-end editing, gutenberg, block editor, inline editor
 Requires at least: 7.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
-Make content updates easier. Now supporting Custom Post Types. Clients and teams can edit live pages safely with zero wp-admin training.
+Make content updates easier. Now supporting Custom Post Types. Clients and teams can update live pages safely with zero wp-admin training.
 
 == Description ==
 
@@ -16,7 +16,7 @@ Make content updates easier. Now supporting Custom Post Types. Clients and teams
 
 Most websites don't need a new page builder. They need a faster way to edit the blocks that already make up their pages.
 
-FrontEdit lets trusted users click directly on headings, paragraphs, images, buttons, lists, tables, and other supported content where it appears on the live page, make their changes in context, and save them through a focused frontend editing experience.
+FrontEdit is a frontend editor for WordPress that lets trusted users click directly on headings, paragraphs, images, buttons, lists, tables, and other supported content where it appears on the live page, make their changes in context, and save them through a focused front-end editing experience.
 
 For site owners and marketing teams, that means faster everyday updates with less WordPress training. For agencies and freelancers, it means fewer routine support requests and a safer way to hand content ownership to clients.
 
@@ -43,9 +43,9 @@ https://www.youtube.com/watch?v=ZsCPpIiREa0
 ### </> Built for Developers Too
 
 * **Build on top of FrontEdit.** A stable Public JavaScript API lets plugins, custom tools, and AI assistants discover editor capabilities and safely perform the same block editing operations used by FrontEdit itself.
-* **Extend compatible blocks.** A schema-driven custom block handler system lets developers add frontend editing support for compatible custom Gutenberg blocks without modifying the plugin core.
+* **Extend compatible blocks.** A schema-driven custom block handler system lets developers add front-end editing support for compatible custom Gutenberg blocks without modifying the plugin core.
 
-= FrontEdit brings content editing to the place it belongs: the frontend. =
+= FrontEdit brings WordPress front-end editing to the place it belongs: the front end. =
 
 Edit a single block or work across multiple blocks. Each block keeps its own active editing session and undo history, letting you jump between blocks while preserving the state of every edit in progress.
 
@@ -55,7 +55,7 @@ FrontEdit changes that.
 
 Instead of sending users into the dashboard to hunt through blocks, sidebars, and settings panels, FrontEdit lets trusted users click directly on the content they want to change and edit it right on the page. Headlines, paragraphs, lists, buttons, media, and more become part of a guided frontend workflow that feels natural, lightweight, and immediate.
 
-FrontEdit complements Gutenberg by bringing block editing directly to the frontend.
+FrontEdit complements Gutenberg by bringing block editing directly to the front end.
 
 Whether you manage your own website, run content updates for a business, or maintain dozens of client sites, FrontEdit creates a new kind of WordPress workflow: faster, clearer, and dramatically easier to delegate.
 
@@ -79,7 +79,7 @@ Every edit preserves the original WordPress block markup and block-specific sett
 
 = ✨ Key Features =
 
-* Edit WordPress blocks directly on the frontend
+* Edit WordPress blocks directly from the front end
 * Click content exactly where it appears on the page
 * Preserve block markup, styling, and block-specific settings
 * Supports text, images, tables, buttons, media, and more
@@ -106,7 +106,7 @@ That means fewer support tickets, fewer admin walkthroughs, fewer accidental lay
 ### ⚙️ How It Works
 
 1. Install and activate FrontEdit.
-2. Open a page on the frontend while logged in.
+2. Open a page on the front end while logged in.
 3. Click supported content directly on the page.
 4. Edit in place and save using a workflow designed to respect WordPress block content.
 
@@ -149,7 +149,7 @@ FrontEdit currently supports a growing set of WordPress blocks.
 
 ### 🧩 Extensible With Custom Block Handlers
 
-FrontEdit includes a schema-driven handler system that allows developers to add frontend editing support for compatible custom blocks and third-party block libraries.
+FrontEdit includes a schema-driven handler system that allows developers to add front-end editing support for compatible custom blocks and third-party block libraries.
 
 Using the included documentation and handler templates, developers can define which parts of a block are editable and how FrontEdit should safely apply those changes without modifying the plugin core.
 
@@ -163,11 +163,11 @@ If you create a reliable handler for a popular third-party block library, you ar
 
 FrontEdit edits supported block content and attributes while preserving the standard serialization and save behavior WordPress expects.
 
-It complements the block editor rather than replacing it, allowing everyday changes to happen on the frontend while the underlying content remains standard Gutenberg block content.
+It complements the block editor rather than replacing it, allowing everyday changes to happen on the front end while the underlying content remains standard Gutenberg block content.
 
 ### 🛡️ Safety That Protects Real Work
 
-Frontend editing has to be convenient, but it also has to protect work already in progress.
+Front-end editing has to be convenient, but it also has to protect work already in progress.
 
 FrontEdit includes safeguards for common editing conflicts:
 
@@ -177,7 +177,7 @@ FrontEdit includes safeguards for common editing conflicts:
 
 ### 🔌 Developer API
 
-FrontEdit includes a stable Public JavaScript API for developers who want to integrate with or extend the frontend editing experience.
+FrontEdit includes a stable Public JavaScript API for developers who want to integrate with or extend the front end editing experience.
 
 The versioned Public API provides documented runtime contracts for interacting with the editor, inspecting supported blocks, applying schema-backed content and attribute updates, working with media and list operations, responding to editor lifecycle events, and building integrations designed for long-term compatibility.
 
@@ -187,7 +187,7 @@ The complete API reference is included with the plugin in `docs/frontend-runtime
 
 ### 🔓 Pro Features When You Need More
 
-FrontEdit provides direct frontend editing in the free plugin. FrontEdit Pro adds workflows for teams that need drafts, approvals, permissions, history, centralized content management, and more.
+FrontEdit is a free WordPress frontend editor for supported Gutenberg blocks. FrontEdit Pro adds workflows for teams that need drafts, approvals, permissions, history, centralized content management, and more.
 
 Batch editing is included in FrontEdit for users with editing access. Pro lets an administrator decide which users may edit several blocks in one session and which users must edit one block at a time.
 
@@ -204,9 +204,9 @@ With Pro, you can unlock advanced features such as:
 
 👉 **[See everything included in FrontEdit Pro](https://maintainwp.com/products/frontedit/#compare-free-vs-pro)**
 
-### 🚧 Expanding Frontend Editing
+### 🚧 Expanding Front-End Editing
 
-FrontEdit is built around editing the content and settings of existing blocks. Future Pro releases are planned to expand that workflow with capabilities such as moving, deleting, and adding blocks directly from the frontend, fully customizable through admin-managed user permissions.
+FrontEdit is built around editing the content and settings of existing blocks. Future Pro releases are planned to expand that workflow with capabilities such as moving, deleting, and adding blocks directly from the front end, fully customizable through admin-managed user permissions.
 
 The goal is to support more complete page-editing workflows for trusted, more technical users, while maintaining the secure, controlled experience FrontEdit is designed for.
 
@@ -229,17 +229,17 @@ Join the ABE waitlist here to get updates and be notified when ABE launches:
 
 1. Upload the `frontedit-live-block-editor` folder to the `/wp-content/plugins/` directory, or install the plugin through the WordPress Plugins screen.
 2. Activate **FrontEdit** through the `Plugins` screen in WordPress.
-3. Visit a page while logged in and begin editing blocks directly on the frontend.
+3. Visit a page while logged in and begin editing blocks directly on the front end.
 
 == Frequently Asked Questions ==
 
 = Does this replace the block editor in wp-admin? =
 
-No. FrontEdit complements the block editor by bringing everyday block editing to the frontend.
+No. FrontEdit complements the block editor by bringing everyday block editing to the front end.
 
-= Who can edit content from the frontend? =
+= Who can edit content from the front end? =
 
-Only users who would be able to edit the page in the block editor can edit that page from the frontend.
+Only users who would be able to edit the page in the block editor can edit that page from the front end.
 
 = Does this plugin affect site performance for visitors? =
 
@@ -283,6 +283,11 @@ Not in the base plugin yet. ABE, the AI Assisted Block Editor for FrontEdit, is 
 
 == Changelog ==
 
+= 1.1.2 =
+* Added WordPress 7.1 compatibility for Pullquote text alignment while retaining support for the legacy attribute format.
+* Updated Abilities API metadata for WordPress 7.1 compatibility.
+* Removed pagination parameters from core/icon media library.
+
 = 1.1.0 =
 * Added support for eligible Gutenberg custom post types whose editable content is stored in standard WordPress post content.
 * Changed internal block UUID assignment to prepare only content that is opened or saved, avoiding automatic site-wide content scans.
@@ -315,6 +320,9 @@ Not in the base plugin yet. ABE, the AI Assisted Block Editor for FrontEdit, is 
 * Initial public 1.0.0 release for the WordPress plugin repository.
 
 == Upgrade Notice ==
+
+= 1.1.2 =
+Improves WordPress 7.1 compatibility, including updated Abilities API metadata and support for third-party icons registered through the new SVG Icon API
 
 = 1.1.0 =
 Adds eligible Gutenberg custom post type support and prepares internal block UUIDs only when content is opened or saved. Fixes a bug where transient Gutenberg default paragraphs were being assigned UUIDs.
