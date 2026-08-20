@@ -1608,9 +1608,11 @@
 			seedInitialHistory: true,
 			captureSnapshot: ({ editorState: activeEditorState }) => captureBlockSessionSnapshot(activeEditorState),
 			captureSelection: ({ editorState: activeEditorState }) => captureBlockSessionSelection(activeEditorState),
-			restoreSnapshot: ({ editorState: activeEditorState, snapshot, selectionToRestore }) => {
-				restoreBlockSessionSnapshot(activeEditorState, snapshot, selectionToRestore || null);
-			},
+			restoreSnapshot: ({ editorState: activeEditorState, snapshot, selectionToRestore }) => restoreBlockSessionSnapshot(
+				activeEditorState,
+				snapshot,
+				selectionToRestore || null
+			),
 		};
 	}
 

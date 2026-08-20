@@ -160,14 +160,14 @@
 		 * Lazily evaluate whether batch editing is enabled.
 		 *
 		 * Do NOT cache this at construction time - BatchEditManager.js is a
-		 * dependency of mwp-sfe-frontend, so its IIFE runs before frontend.js.
+		 * dependency of mwpsfe-frontend, so its IIFE runs before frontend.js.
 		 * SFE.ManagerData is injected before this dependency chain,
 		 * so it is available when these methods are called (not at construction).
 		 */
 		isEnabled() {
 			if (this._sessionFailed) return false;
-			const data    = getManagerData();
-			const perms   = data.permissions || {};
+			const data  = getManagerData();
+			const perms = data.permissions || {};
 			return !!perms.can_batch;
 		}
 

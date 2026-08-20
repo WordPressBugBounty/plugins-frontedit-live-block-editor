@@ -1597,6 +1597,7 @@
 				editableBlockDiscovery: true,
 				editingRuntimeResolution: true,
 				textComponentOperations: true,
+				structuredEditOperations: true,
 				mediaComponentOperations: true,
 				mediaInspection: true,
 				mediaSessionControl: true,

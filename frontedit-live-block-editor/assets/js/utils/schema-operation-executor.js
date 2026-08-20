@@ -119,8 +119,11 @@
 	 * Sync one editor instance to the tracker's current root list element.
 	 *
 	 * Root list type changes replace the editable element. All editor-facing
-	 * callers should update their element reference through this helper instead
-	 * of assuming the original root still exists.
+	 * callers should update both the active element and the schema host's block
+	 * root through this helper instead of assuming the original root still
+	 * exists. History snapshots are block-root scoped, so leaving
+	 * `blockRootElement` pointed at the detached pre-swap list would record an
+	 * entry that undo cannot restore.
 	 *
 	 * @param   {Object|null} editorHost Active schema editor host.
 	 * @param   {Object|null} tracker   Active list tracker.
@@ -133,6 +136,14 @@
 
 		if (editorHost.element !== tracker.listElement) {
 			editorHost.element = tracker.listElement;
+		}
+
+		if (
+			editorHost.options &&
+			typeof editorHost.options === 'object' &&
+			Object.prototype.hasOwnProperty.call(editorHost.options, 'blockRootElement')
+		) {
+			editorHost.options.blockRootElement = tracker.listElement;
 		}
 
 		if (typeof editorHost.syncPlaceholderState === 'function') {

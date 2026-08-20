@@ -2,9 +2,9 @@
 Contributors: maintainwp
 Tags: frontend editor, front-end editing, gutenberg, block editor, inline editor
 Requires at least: 7.0
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.2
+Stable tag: 1.1.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
@@ -283,6 +283,9 @@ Not in the base plugin yet. ABE, the AI Assisted Block Editor for FrontEdit, is 
 
 == Changelog ==
 
+= 1.1.5 =
+* Fixed API operations not reliably storing a history entry to undo in the editor.
+
 = 1.1.2 =
 * Added WordPress 7.1 compatibility for Pullquote text alignment while retaining support for the legacy attribute format.
 * Updated Abilities API metadata for WordPress 7.1 compatibility.
@@ -320,6 +323,9 @@ Not in the base plugin yet. ABE, the AI Assisted Block Editor for FrontEdit, is 
 * Initial public 1.0.0 release for the WordPress plugin repository.
 
 == Upgrade Notice ==
+
+= 1.1.5 =
+Fixes API operations not reliably storing a history entry to undo in the editor.
 
 = 1.1.2 =
 Improves WordPress 7.1 compatibility, including updated Abilities API metadata and support for third-party icons registered through the new SVG Icon API

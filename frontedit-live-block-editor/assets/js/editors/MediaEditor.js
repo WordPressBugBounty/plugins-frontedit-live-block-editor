@@ -1247,11 +1247,15 @@
 							typeof snapshot === 'object' &&
 							Object.prototype.hasOwnProperty.call(snapshot, 'rootOuterHTML')
 						) {
-							textEditorApi.restoreBlockSessionSnapshot(activeEditorState, snapshot, selectionToRestore || null);
-							return;
+							return textEditorApi.restoreBlockSessionSnapshot(
+								activeEditorState,
+								snapshot,
+								selectionToRestore || null
+							);
 						}
 
 						applyToolbarState(host, snapshot);
+						return true;
 					},
 				});
 			}

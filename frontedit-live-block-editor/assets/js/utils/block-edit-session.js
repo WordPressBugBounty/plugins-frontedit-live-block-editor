@@ -191,10 +191,10 @@
 				),
 				restore: ({ host: activeHost, session, editorState, scopeId, snapshot, preferredSelection, entrySelection }) => {
 					if (typeof config.restoreSnapshot !== 'function') {
-						return;
+						return false;
 					}
 
-					config.restoreSnapshot({
+					return config.restoreSnapshot({
 						host: activeHost,
 						session,
 						editorState,
@@ -779,11 +779,12 @@
 				return false;
 			}
 
+			const previousScopeId = this.activeScopeId;
 			this.activateScope(entry.scopeId);
 			this.isRestoring = true;
 
 			try {
-				descriptor.restore({
+				const restoreSucceeded = descriptor.restore({
 					host: descriptor.host || null,
 					session: this,
 					editorState: this.editorState,
@@ -792,6 +793,10 @@
 					preferredSelection: cloneSnapshotValue(preferredSelection),
 					entrySelection: cloneSnapshotValue(entry.selection),
 				});
+				if (restoreSucceeded !== true) {
+					this.activeScopeId = previousScopeId;
+					return false;
+				}
 
 				const selectionToRestore = entry.selection != null
 					? entry.selection
@@ -812,7 +817,6 @@
 				this.isRestoring = false;
 			}
 
-			this.notifyHistoryChange();
 			return true;
 		}
 
@@ -842,8 +846,13 @@
 				})
 				: null;
 
+			if (!this.restoreEntry(nextEntry, preferredSelection)) {
+				return false;
+			}
+
 			this.historyIndex--;
-			return this.restoreEntry(nextEntry, preferredSelection);
+			this.notifyHistoryChange();
+			return true;
 		}
 
 		/**
@@ -872,8 +881,13 @@
 				})
 				: null;
 
+			if (!this.restoreEntry(nextEntry, preferredSelection)) {
+				return false;
+			}
+
 			this.historyIndex++;
-			return this.restoreEntry(nextEntry, preferredSelection);
+			this.notifyHistoryChange();
+			return true;
 		}
 
 		/**
