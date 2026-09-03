@@ -129,7 +129,7 @@ It tells FrontEdit to defer the *first* UUID assignment only while the block
 has no UUID or shadow UUID, no other block attributes or inner blocks, and its
 trimmed parsed `innerHTML` exactly matches the declared markup. This is not a
 general empty-content setting. Once an element has an identifier, FrontEdit
-will retain it—even if its content is later emptied—so existing history remains
+will retain it--even if its content is later emptied--so existing history remains
 attached to that element.
 
 ### Components
@@ -248,12 +248,85 @@ uses that representation.
 Use the protected helper methods on the abstract edit handler to declare the
 matching operations. Common helpers are:
 
-- `get_editor_text_rewrite_operation( $component_id )`
+- `get_editor_text_rewrite_operation( $component_id, $public_operation = true )`
 - `get_editor_inline_format_change_operation( $component_id, $formats )`
 - `get_editor_inline_attribute_change_operation( $component_id, 'link', $capabilities )`
-- `get_editor_block_attribute_change_operation( $operation_id, $component_id, $capability )`
+- `get_editor_block_attribute_change_operation( $operation_id, $component_id, $capability, $input_requirements = array() )`
+- `get_editor_media_replace_operation( $component_id )`
 
 Pass the completed array through `normalize_editor_operations()`.
+
+The block-attribute helper always declares a required scalar `value` input.
+Use its optional `$input_requirements` argument only when the operation needs
+additional schema-owned input. For example, a column-scoped operation can
+declare `columns` with `required => true` and
+`type => 'zero_based_indexes_or_all'`. Do not teach an external integration
+about a custom operation ID; it should read `editor.operations[*].inputs` from
+FrontEdit's public AI operation contract instead.
+
+### Public operation contract
+
+Set `publicOperation => true` only when an operation is safe to advertise to
+external integrations. The V1 public projection contains only:
+
+```php
+array(
+	'id'          => 'set_text_align',
+	'componentId' => 'content',
+	'inputs'      => array(
+		'value' => array( 'type' => 'scalar', 'required' => true ),
+	),
+	'values'      => array( 'left', 'center', 'right' ),
+)
+```
+
+FrontEdit resolves the private operation metadata from the active handler when
+the browser preflights and stages that envelope. Do not publish or require
+attribute paths, operation `kind`, bindings, selectors, or serialization
+details. An operation without `publicOperation => true` remains editor-internal
+and is not exposed by `getEditOperationContract(...)`.
+
+The generic public input types are `scalar`, `zero_based_indexes_or_all`,
+`rich_text_runs`, and `url`. Add a genuinely new type in FrontEdit's shared
+runtime validator and schema documentation, never in an integration-specific
+allowlist.
+
+For a `rich_text_runs` public operation, FrontEdit automatically projects the
+component's `inlineFormatCapabilities` tokens as `allowedRunFormats`. If a
+format capability declares `requiredAttributes`, FrontEdit also projects only
+those names as `requiredRunFormatAttributes`; integrations must include those
+values under the matching run `formatAttributes` key. Do not duplicate this
+requirement in a handler operation or in an integration-specific map.
+
+### Current public operation state
+
+The read-only `mwpsfe/get-public-operation-contract` Ability also returns
+`current_operation_state`. Each record contains the public `componentId`,
+`operationId`, and a `state` object keyed only by that operation's public input
+names. It is the supported server-side source of current values for AI and
+other generated proposals.
+
+For operations created with the protected helpers, FrontEdit reads current state
+from the same handler schema automatically:
+
+- text rewrites receive complete current `runs`, including declared inline link
+  `href`, `target`, and `rel` attributes;
+- media replacement receives its current `url` and `attachmentId` from the file
+  component's existing bindings;
+- host-link changes receive `href`, `new_tab`, and `no_follow` from the host
+  component; and
+- block-attribute changes receive their current `value`, plus repeated-column
+  scope where declared. When a block attribute has an effective default, put
+  that value in its existing `unsetValue` declaration so FrontEdit can project
+  a concrete current value even when WordPress omits the attribute from saved
+  block data.
+
+Do not mirror block attributes in an external integration to build this state.
+If a custom handler persists a value in a representation that cannot be read
+through those standard bindings, it may add a private `currentState` reader map
+to the relevant operation or attribute capability. FrontEdit keeps that reader
+private and exposes only the resulting public input values. See
+`docs/schema-contract.md` for the canonical current-state grammar.
 
 ### Attribute capabilities
 
@@ -268,7 +341,7 @@ Declare block attributes used by toolbar operations under
 ),
 'textAlignment' => array(
 	'attribute'  => 'style.typography.textAlign',
-	'values'     => array( 'left', 'center', 'right', 'justify' ),
+	'values'     => array( 'left', 'center', 'right' ),
 	'unsetValue' => 'left',
 ),
 ```

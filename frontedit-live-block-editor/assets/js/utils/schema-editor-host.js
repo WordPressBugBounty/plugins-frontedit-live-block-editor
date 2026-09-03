@@ -1,6 +1,9 @@
 /**
  * Shared schema editor host contract helpers.
  *
+ * Reads (via globals):
+ *   SFE.SchemaOperationExecutor - schema alignment capability and virtual-binding semantics
+ *
  * Exposes: SFE.SchemaEditorHost
  */
 (function() {
@@ -349,15 +352,21 @@
 	}
 
 	/**
-	 * Read the current textAlignment value from the live DOM target state.
+	 * Read the current textAlignment value from tracked state or the live DOM
+	 * target state.
+	 *
+	 * Virtual schema bindings are scoped to their concrete component or column,
+	 * so their DOM target is authoritative. A shared tracked scalar would retain
+	 * the first or most recently changed component's value instead.
 	 *
 	 * @param {HTMLElement|HTMLElement[]} [targetElement] Optional explicit target.
 	 * @returns {string} Normalized textAlignment value.
 	 */
 	function getTextAlignmentState(targetElement = this.getTextAlignmentTargetElement()) {
 		const capability = SFE.SchemaOperationExecutor?.getTextAlignmentCapability?.(this, this.getTextAlignmentOperation()) || null;
+		const isVirtualBindingBackedAlignment = SFE.SchemaOperationExecutor?.isVirtualBindingBackedTextAlignmentCapability?.(capability) === true;
 		const trackedValue = capability?.attribute ? this.getTrackedAttributeValue(capability.attribute) : undefined;
-		if (typeof trackedValue === 'string' && trackedValue.trim()) {
+		if (!isVirtualBindingBackedAlignment && typeof trackedValue === 'string' && trackedValue.trim()) {
 			return trackedValue.trim().toLowerCase();
 		}
 		const targets = this.normalizeTargetElements(targetElement);
@@ -651,6 +660,10 @@
 	/**
 	 * Apply one schema-backed textAlignment change to tracked state and live DOM.
 	 *
+	 * Material block attributes are tracked for serialization. Virtual bindings
+	 * are persisted by the schema's per-component DOM extraction, so storing a
+	 * shared scalar for them would make later toolbar reads stale.
+	 *
 	 * @param {string} textAlignment Requested textAlignment value.
 	 * @param {Object} targetConfig Target resolution config.
 	 * @param {Object} [targetConfig.operation] Resolved schema operation metadata.
@@ -694,7 +707,12 @@
 			normalizedTextAlignment
 		);
 
-		this.setTrackedAttributeValue(textAlignmentCapability.attribute, trackedTextAlignment);
+		const isVirtualBindingBackedAlignment = operationExecutor.isVirtualBindingBackedTextAlignmentCapability(
+			textAlignmentCapability
+		);
+		if (!isVirtualBindingBackedAlignment) {
+			this.setTrackedAttributeValue(textAlignmentCapability.attribute, trackedTextAlignment);
+		}
 
 		const targetValue = (
 			textAlignmentCapability.attribute === 'columnAlignment' &&

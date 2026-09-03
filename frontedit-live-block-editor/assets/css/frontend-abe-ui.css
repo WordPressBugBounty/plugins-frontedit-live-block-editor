@@ -173,7 +173,7 @@
 .mwp-abe-card-copy,
 .mwp-abe-note,
 .mwp-abe-empty {
-	margin: 8px 0 0;
+	margin: 0;
 	font-size: var(--mwp-sfe-font-size-medium);
 	line-height: 1.6;
 }

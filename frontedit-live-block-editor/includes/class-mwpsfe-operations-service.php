@@ -192,6 +192,64 @@ class MWPSFE_Operations_Service {
 	}
 
 	/**
+	 * Return the handler-derived public operation contract for one editable block.
+	 *
+	 * This read-only service intentionally exposes no block attributes, schema
+	 * bindings, selectors, executor kinds, or serialization details. It returns a
+	 * separate handler-derived current-operation-state projection keyed only by
+	 * public operation inputs, so consumers never need to rebuild that state from
+	 * raw attributes. Consumers still must use the browser PublicApi preflight and
+	 * apply methods to stage a validated operation in the active FrontEdit editor
+	 * session.
+	 *
+	 * @param int    $post_id FrontEdit-supported post ID.
+	 * @param string $uuid    FrontEdit block UUID.
+	 * @return array<string,mixed>
+	 */
+	public function get_public_operation_contract( int $post_id, string $uuid ): array {
+		$post = $this->get_supported_post( $post_id );
+		if ( ! $post instanceof WP_Post ) {
+			return array(
+				'error'  => 'Post not found',
+				'status' => 404,
+			);
+		}
+
+		$block = $this->find_block_for_post( $post, $post_id, $uuid );
+		if ( ! is_array( $block ) ) {
+			return array(
+				'error'  => 'Editable block not found',
+				'status' => 404,
+			);
+		}
+
+		$handler = $this->resolve_schema_edit_handler( $block );
+		if ( ! $handler instanceof MWPSFE_Schema_Handler_Interface ) {
+			return array(
+				'error'  => 'Public operation contract unavailable',
+				'status' => 422,
+			);
+		}
+
+		$contract = MWPSFE_Public_Operation_Contract::build( $uuid, $block, $handler );
+		if ( empty( $contract ) ) {
+			return array(
+				'error'  => 'Public operation contract unavailable',
+				'status' => 422,
+			);
+		}
+
+		return array(
+			'success'                 => true,
+			'post_id'                 => $post_id,
+			'handler_id'              => $handler->id(),
+			'contract'                => $contract,
+			'current_operation_state' => MWPSFE_Public_Operation_Contract::build_current_operation_state( $block, $handler ),
+			'page_revision_token'     => $this->manager->get_post_revision_token( $post_id ),
+		);
+	}
+
+	/**
 	 * Shape one safe discovery record from a UUID-map entry.
 	 *
 	 * @param string              $uuid FrontEdit block UUID.
@@ -222,6 +280,27 @@ class MWPSFE_Operations_Service {
 			'handler_ids' => array_values( array_unique( $handler_ids ) ),
 			'source_text' => wp_strip_all_tags( (string) ( $data['text'] ?? '' ), true ),
 		);
+	}
+
+	/**
+	 * Resolve the first schema-backed edit handler that owns one parsed block.
+	 *
+	 * @param array<string,mixed> $block Parsed Gutenberg block.
+	 * @return MWPSFE_Handler_Interface|null
+	 */
+	private function resolve_schema_edit_handler( array $block ): ?MWPSFE_Handler_Interface {
+		foreach ( $this->handler_registry->get_handlers() as $handler ) {
+			if (
+				$handler instanceof MWPSFE_Handler_Interface
+				&& $handler instanceof MWPSFE_Schema_Handler_Interface
+				&& 'edit' === $handler->capability()
+				&& $handler->can_handle_block( $block )
+			) {
+				return $handler;
+			}
+		}
+
+		return null;
 	}
 
 	/**

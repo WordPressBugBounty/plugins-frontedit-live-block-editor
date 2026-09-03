@@ -4,7 +4,7 @@ Tags: frontend editor, front-end editing, gutenberg, block editor, inline editor
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.5
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
@@ -179,7 +179,7 @@ FrontEdit includes safeguards for common editing conflicts:
 
 FrontEdit includes a stable Public JavaScript API for developers who want to integrate with or extend the front end editing experience.
 
-The versioned Public API provides documented runtime contracts for interacting with the editor, inspecting supported blocks, applying schema-backed content and attribute updates, working with media and list operations, responding to editor lifecycle events, and building integrations designed for long-term compatibility.
+The versioned Public API provides documented runtime contracts for interacting with the editor, inspecting supported blocks, applying schema-backed content and attribute updates, working with media and list operations, responding to editor lifecycle events, and building integrations designed for long-term compatibility. `getListOperationContract()` exposes the FrontEdit-owned list operation and input descriptor so integrations do not maintain parallel list-operation maps. Server-side AI integrations can also read handler-derived current operation state for text, media, host links, and settings without reconstructing a parallel block-attribute map.
 
 Whether you're building custom editing tools, AI-powered workflows, or integrations with your own plugins, the Public API is the recommended way to interact with FrontEdit at runtime.
 
@@ -212,15 +212,14 @@ The goal is to support more complete page-editing workflows for trusted, more te
 
 ### 🤖 Coming Soon: ABE, Your Personal WordPress Assistant
 
-AI is changing the way people work, but most AI tools still feel disconnected from WordPress. They generate text in a chat window and leave you to figure out where it goes, how it should be formatted, and how to safely apply it.
+ABE, the AI Assisted Block Editor, is being built as a free companion to FrontEdit that makes updating WordPress content simpler and more guided.
 
-That is where ABE comes in.
+ABE will offer two ways to work:
 
-ABE, the AI Assisted Block Editor, is being built specifically for WordPress and FrontEdit. It is not meant to be a generic chatbot. It is designed as your personal WordPress assistant: one that understands editable page content, works with FrontEdit-owned blocks, and helps rewrite, generate, and update content live on the page in front of you.
+* AI mode (BYOK): Connect a supported AI provider through your WordPress AI connector and use natural-language requests to help rewrite, generate, and update supported blocks.
+* AI-free mode: Use the same chat-style interface without AI. ABE guides you through available editing actions and helps you make changes through a simpler, more structured workflow.
 
-The vision is simple: describe what you want, review the result in context, and watch WordPress content update in a workflow that feels native instead of bolted on.
-
-🚀 ABE is planned to be included with FrontEdit Pro at no additional cost.
+In either mode, ABE works with FrontEdit-supported blocks and stages proposed changes for you to review and apply. It will not blindly update your page and save on its own.
 
 Join the ABE waitlist here to get updates and be notified when ABE launches:
 [Sign up here](https://maintainwp.com/abe-waitlist-signup-page/)
@@ -266,8 +265,13 @@ FrontEdit Base sends each block-linked content request directly to the administr
 
 = Is AI included? =
 
-Not in the base plugin yet. ABE, the AI Assisted Block Editor for FrontEdit, is currently in development. It will be included with the Pro subscription at no additional cost. You can join the waitlist here:
-[Sign up now](https://maintainwp.com/abe-waitlist-signup-page/)
+AI is optional. ABE, the AI Assisted Block Editor for FrontEdit, will be available for free and can be used in two modes.
+
+If you connect an AI provider through your WordPress AI connector, ABE can use it to assist with natural-language block updates. You can also use ABE entirely without AI through its guided editing workflow.
+
+In both cases, changes are staged for your review before you save them.
+
+[Join the ABE waitlist](https://maintainwp.com/abe-waitlist-signup-page/)
 
 == Screenshots ==
 
@@ -282,6 +286,19 @@ Not in the base plugin yet. ABE, the AI Assisted Block Editor for FrontEdit, is 
 9. Write a comment to the admin with a content request
 
 == Changelog ==
+
+= 1.2.0 =
+* Overhauled the Public JavaScript API with handler-declared operation contracts that expose only the operations, inputs, formats, and allowed values supported by each editable block.
+* Replaced the separate public text, media, block-attribute, and structured-edit mutation APIs with the unified getEditOperationContract(), preflightOperations(), and applyOperations() workflow.
+* Added strict schema-backed preflight validation for public operations, including rejection of unsupported operations, unknown inputs, invalid values, and invalid rich-text or media payloads before changes are staged.
+* Added the mwpsfe/get-public-operation-contract Ability so authorized integrations can retrieve the same handler-derived operation contract server-side without exposing internal attributes, selectors, bindings, or executor details.
+* Added handler-derived current operation state for text, links, media, and block settings so integrations can preserve existing values without maintaining their own block-attribute mappings.
+* Improved rich-text operation state to preserve supported inline link URL, target, and rel values.
+* Added getListOperationContract() as the canonical definition of supported list operations and their required inputs, with list validation now derived from that contract.
+* Public operation batches now stage through FrontEdit's shared editor executor and are recorded as a single undo-history step.
+* Fixed public operation batches being rejected when a valid operation was a no-op because the requested value already matched the current value.
+* Fixed table column alignment controls using stale shared alignment state instead of the active column's actual alignment.
+* Removed justify as a text alignment option from the core/paragraph, core/heading, core/verse, and core/button block handlers.
 
 = 1.1.5 =
 * Fixed API operations not reliably storing a history entry to undo in the editor.
@@ -323,6 +340,9 @@ Not in the base plugin yet. ABE, the AI Assisted Block Editor for FrontEdit, is 
 * Initial public 1.0.0 release for the WordPress plugin repository.
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+Major Public API update. Integrations using the previous text, media, attribute, or structured-edit mutation APIs should migrate to getEditOperationContract(), preflightOperations(), and applyOperations(). List integrations can now use getListOperationContract().
 
 = 1.1.5 =
 Fixes API operations not reliably storing a history entry to undo in the editor.

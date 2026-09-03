@@ -174,6 +174,33 @@ class MWPSFE_Abilities {
 					'type' => 'object',
 				),
 			),
+			'mwpsfe/get-public-operation-contract' => array(
+				'label'               => 'Get Public Operation Contract',
+				'description'         => 'Return the handler-declared public editing operations and their current handler-derived public input state for one authorized FrontEdit block.',
+				'category'            => 'mwpsfe-read',
+				'meta'                => $this->build_meta( true, true, false ),
+				'permission_callback' => array( $this, 'permission_can_edit' ),
+				'execute_callback'    => function( $input ) {
+					$input = $this->normalize_ability_input( $input );
+					return $this->normalize_execution_result(
+						$this->operations_service->get_public_operation_contract(
+							(int) ( $input['post_id'] ?? 0 ),
+							sanitize_text_field( (string) ( $input['uuid'] ?? '' ) )
+						)
+					);
+				},
+				'input_schema' => array(
+					'type' => 'object',
+					'properties' => array(
+						'post_id' => array( 'type' => 'integer' ),
+						'uuid'    => array( 'type' => 'string' ),
+					),
+					'required' => array( 'post_id', 'uuid' ),
+				),
+				'output_schema' => array(
+					'type' => 'object',
+				),
+			),
 			'mwpsfe/get-frontend-runtime-contract' => array(
 				'label'               => 'Get Frontend Runtime Contract',
 				'description'         => 'Return the canonical FrontEdit browser runtime contract for an authorized post editor.',

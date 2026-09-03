@@ -605,19 +605,27 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 	/**
 	 * Build a schema operation for text rewrites on one component surface.
 	 *
-	 * @param string $component_id Component ID that owns the text surface.
+	 * @param string $component_id     Component ID that owns the text surface.
+	 * @param bool   $public_operation Whether this operation is available to public integrations.
 	 * @return array<string, mixed>
 	 */
-	protected function get_editor_text_rewrite_operation( $component_id ) {
+	protected function get_editor_text_rewrite_operation( $component_id, $public_operation = true ) {
 		$component_id = trim( (string) $component_id );
 		if ( '' === $component_id ) {
 			return array();
 		}
 
 		return array(
-			'id'                     => 'rewrite_text',
-			'kind'                   => 'text_rewrite',
-			'component'              => $component_id,
+			'id'              => 'rewrite_text',
+			'kind'            => 'text_rewrite',
+			'component'       => $component_id,
+			'publicOperation' => (bool) $public_operation,
+			'inputs'          => array(
+				'runs' => array(
+					'required' => true,
+					'type'     => 'rich_text_runs',
+				),
+			),
 			'preserveInlineFormatting' => true,
 			'preserveUnchangedText'  => true,
 		);
@@ -785,12 +793,27 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 		}
 
 		$operation = array(
-			'id'                            => $operation_id,
-			'kind'                          => 'link_change',
-			'component'                     => $component_id,
-			'format'                        => $format_token,
-			'attributes'                    => $attributes,
-			'settings'                      => array( 'new_tab', 'no_follow' ),
+			'id'              => $operation_id,
+			'kind'            => 'link_change',
+			'component'       => $component_id,
+			'publicOperation' => true,
+			'format'          => $format_token,
+			'attributes'      => $attributes,
+			'settings'        => array( 'new_tab', 'no_follow' ),
+			'inputs'          => array(
+				'href' => array(
+					'required' => true,
+					'type'     => 'url',
+				),
+				'new_tab' => array(
+					'required' => false,
+					'type'     => 'scalar',
+				),
+				'no_follow' => array(
+					'required' => false,
+					'type'     => 'scalar',
+				),
+			),
 			'targetModes'                   => array( 'host' ),
 			'preserveUnspecifiedAttributes' => true,
 		);
@@ -812,9 +835,11 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 	 * @param string $operation_id        Stable operation identifier.
 	 * @param string $component_id        Component ID that owns the editing surface.
 	 * @param array  $attribute_capability Attribute capability definition.
+	 * @param array  $input_requirements   Additional schema-declared operation input requirements.
+	 * @param bool   $public_operation     Whether the operation is available to public integrations.
 	 * @return array<string, mixed>
 	 */
-	protected function get_editor_block_attribute_change_operation( $operation_id, $component_id, $attribute_capability ) {
+	protected function get_editor_block_attribute_change_operation( $operation_id, $component_id, $attribute_capability, $input_requirements = array(), $public_operation = true ) {
 		$operation_id = trim( (string) $operation_id );
 		$component_id = trim( (string) $component_id );
 		if ( '' === $operation_id || '' === $component_id || ! is_array( $attribute_capability ) ) {
@@ -822,10 +847,34 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 		}
 
 		$operation = array(
-			'id'        => $operation_id,
-			'kind'      => 'block_attribute_change',
-			'component' => $component_id,
+			'id'              => $operation_id,
+			'kind'            => 'block_attribute_change',
+			'component'       => $component_id,
+			'publicOperation' => (bool) $public_operation,
+			'inputs'          => array(
+				'value' => array(
+					'required' => true,
+					'type'     => 'scalar',
+				),
+			),
 		);
+
+		foreach ( (array) $input_requirements as $input_name => $input_requirement ) {
+			$input_name = sanitize_key( (string) $input_name );
+			if ( '' === $input_name || 'value' === $input_name || ! is_array( $input_requirement ) ) {
+				return array();
+			}
+
+			$input_type = sanitize_key( (string) ( $input_requirement['type'] ?? '' ) );
+			if ( ! in_array( $input_type, array( 'scalar', 'zero_based_indexes_or_all' ), true ) ) {
+				return array();
+			}
+
+			$operation['inputs'][ $input_name ] = array(
+				'required' => ! empty( $input_requirement['required'] ),
+				'type'     => $input_type,
+			);
+		}
 
 		if ( ! empty( $attribute_capability['attribute'] ) && is_string( $attribute_capability['attribute'] ) ) {
 			$operation['attribute'] = trim( $attribute_capability['attribute'] );
@@ -858,7 +907,76 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 			$operation['unsetValue'] = $attribute_capability['unsetValue'];
 		}
 
+		$current_value_state = isset( $attribute_capability['currentState'] ) && is_array( $attribute_capability['currentState'] )
+			? $attribute_capability['currentState']
+			: array();
+		if ( empty( $current_value_state ) && ! empty( $operation['attribute'] ) ) {
+			$current_value_state = array(
+				'source' => 'block_attribute',
+				'path'   => $operation['attribute'],
+			);
+			if ( array_key_exists( 'unsetValue', $attribute_capability ) ) {
+				$current_value_state['default'] = $attribute_capability['unsetValue'];
+			}
+		}
+		if ( ! empty( $current_value_state ) ) {
+			$operation['currentState'] = array(
+				'value' => $current_value_state,
+			);
+		}
+		foreach ( (array) $input_requirements as $input_name => $input_requirement ) {
+			if (
+				'columns' === $input_name
+				&& is_array( $input_requirement )
+				&& 'zero_based_indexes_or_all' === ( $input_requirement['type'] ?? '' )
+			) {
+				$operation['currentState']['columns'] = array(
+					'source'  => 'repeat_context',
+					'key'     => 'column',
+					'asArray' => true,
+				);
+			}
+		}
+
 		return $operation;
+	}
+
+	/**
+	 * Build a schema operation for replacing one declared media component.
+	 *
+	 * The handler owns this public operation declaration just as it owns text
+	 * and setting operations. Integrations receive only the operation ID and
+	 * input contract; the executor keeps media-session mechanics private.
+	 *
+	 * @param string $component_id Component ID that owns the media surface.
+	 * @return array<string,mixed>
+	 */
+	protected function get_editor_media_replace_operation( $component_id ) {
+		$component_id = trim( (string) $component_id );
+		if ( '' === $component_id ) {
+			return array();
+		}
+
+		return array(
+			'id'              => 'replace_media',
+			'kind'            => 'replace_component_media',
+			'component'       => $component_id,
+			'publicOperation' => true,
+			'inputs'          => array(
+				'url' => array(
+					'required' => true,
+					'type'     => 'url',
+				),
+				'attachmentId' => array(
+					'required' => false,
+					'type'     => 'scalar',
+				),
+				'source' => array(
+					'required' => false,
+					'type'     => 'scalar',
+				),
+			),
+		);
 	}
 
 	/**
@@ -1998,8 +2116,7 @@ class MWPSFE_Handler_Core_Paragraph extends MWPSFE_Abstract_Text_Edit_Handler im
 			),
 			'textAlignment' => array(
 				'attribute'  => 'style.typography.textAlign',
-				'values'     => array( 'left', 'center', 'right', 'justify' ),
-				'unsetValue' => 'left',
+				'values'     => array( 'left', 'center', 'right' ),
 			),
 		);
 
@@ -2088,8 +2205,9 @@ class MWPSFE_Handler_Core_Heading extends MWPSFE_Abstract_Text_Edit_Handler impl
 		$inline_format_capabilities = $this->get_inline_format_capabilities( array( 'bold', 'italic', 'strikethrough', 'link' ) );
 		$attribute_capabilities     = array(
 			'headingLevels' => array(
-				'attribute' => 'level',
-				'values'    => array( 1, 2, 3, 4, 5, 6 ),
+				'attribute'  => 'level',
+				'values'     => array( 1, 2, 3, 4, 5, 6 ),
+				'unsetValue' => 2,
 			),
 			'align' => array(
 				'attribute'  => 'align',
@@ -2098,8 +2216,7 @@ class MWPSFE_Handler_Core_Heading extends MWPSFE_Abstract_Text_Edit_Handler impl
 			),
 			'textAlignment' => array(
 				'attribute'  => 'style.typography.textAlign',
-				'values'     => array( 'left', 'center', 'right', 'justify' ),
-				'unsetValue' => 'left',
+				'values'     => array( 'left', 'center', 'right' ),
 			),
 		);
 
@@ -2278,9 +2395,9 @@ class MWPSFE_Handler_Core_List extends MWPSFE_Abstract_Text_Edit_Handler impleme
 						'operations'               => $this->normalize_editor_operations(
 							array(
 								$this->get_editor_list_structure_operation( 'toggle_list_type', 'list_root', 'toggle_list_type' ),
-								$this->get_editor_block_attribute_change_operation( 'set_unordered_list', 'list_root', $attribute_capabilities['unorderedList'] ),
-								$this->get_editor_block_attribute_change_operation( 'set_ordered_list', 'list_root', $attribute_capabilities['orderedList'] ),
-								$this->get_editor_text_rewrite_operation( 'list_root' ),
+								$this->get_editor_block_attribute_change_operation( 'set_unordered_list', 'list_root', $attribute_capabilities['unorderedList'], array(), false ),
+								$this->get_editor_block_attribute_change_operation( 'set_ordered_list', 'list_root', $attribute_capabilities['orderedList'], array(), false ),
+								$this->get_editor_text_rewrite_operation( 'list_root', false ),
 								$this->get_editor_inline_format_change_operation( 'list_root', array( 'bold', 'italic', 'strikethrough' ) ),
 								$this->get_editor_inline_attribute_change_operation( 'list_root', 'link', $inline_format_capabilities ),
 							)
@@ -2288,17 +2405,17 @@ class MWPSFE_Handler_Core_List extends MWPSFE_Abstract_Text_Edit_Handler impleme
 					),
 				),
 				array(
-					'id'          => 'list_item',
-					'label'       => 'List Item',
-					'type'        => 'text',
-					'selector'    => '[data-mwp-sfe-list-item-text="1"]',
-					'uiEditable'  => false,
-					'repeat'      => array(
+					'id'         => 'list_item',
+					'label'      => 'List Item',
+					'type'       => 'text',
+					'selector'   => '[data-mwp-sfe-list-item-text="1"]',
+					'uiEditable' => false,
+					'repeat'     => array(
 						'mode'         => 'tree_path',
 						'itemSelector' => 'li',
 						'pathKey'      => 'path',
 					),
-					'bindings'    => array(
+					'bindings' => array(
 						array(
 							'path'   => '__list_item__.{path}',
 							'source' => 'html',
@@ -2308,7 +2425,7 @@ class MWPSFE_Handler_Core_List extends MWPSFE_Abstract_Text_Edit_Handler impleme
 						'inlineFormatCapabilities' => $inline_format_capabilities,
 						'operations'               => $this->normalize_editor_operations(
 							array(
-								$this->get_editor_text_rewrite_operation( 'list_item' ),
+								$this->get_editor_text_rewrite_operation( 'list_item', false ),
 								$this->get_editor_inline_format_change_operation( 'list_item', array( 'bold', 'italic', 'strikethrough' ) ),
 								$this->get_editor_inline_attribute_change_operation( 'list_item', 'link', $inline_format_capabilities ),
 								$this->get_editor_list_structure_operation( 'insert_list_item', 'list_item', 'insert_list_item' ),
@@ -2516,8 +2633,7 @@ class MWPSFE_Handler_Core_Verse extends MWPSFE_Abstract_Text_Edit_Handler implem
 		$attribute_capabilities     = array(
 			'textAlignment' => array(
 				'attribute'  => 'style.typography.textAlign',
-				'values'     => array( 'left', 'center', 'right', 'justify' ),
-				'unsetValue' => 'left',
+				'values'     => array( 'left', 'center', 'right' ),
 			),
 		);
 
@@ -2791,8 +2907,7 @@ class MWPSFE_Handler_Core_Button extends MWPSFE_Abstract_Text_Edit_Handler imple
 		$attribute_capabilities     = array(
 			'textAlignment' => array(
 				'attribute'  => 'style.typography.textAlign',
-				'values'     => array( 'left', 'center', 'right', 'justify' ),
-				'unsetValue' => 'left',
+				'values'     => array( 'left', 'center', 'right' ),
 			),
 			'buttonLink' => array(
 				'attributes' => array( 'url', 'linkTarget', 'rel' ),
@@ -3115,6 +3230,12 @@ class MWPSFE_Handler_Core_Table extends MWPSFE_Abstract_Text_Edit_Handler implem
 	 */
 	public function get_schema_definition() {
 		$inline_format_capabilities = $this->get_inline_format_capabilities( array( 'bold', 'italic', 'strikethrough', 'link' ) );
+		$column_scope_input         = array(
+			'columns' => array(
+				'required' => true,
+				'type'     => 'zero_based_indexes_or_all',
+			),
+		);
 		$attribute_capabilities     = array(
 			'align' => array(
 				'attribute'  => 'align',
@@ -3124,7 +3245,10 @@ class MWPSFE_Handler_Core_Table extends MWPSFE_Abstract_Text_Edit_Handler implem
 			'columnAlignment' => array(
 				'attribute'  => 'columnAlignment',
 				'values'     => array( 'left', 'center', 'right' ),
-				'unsetValue' => 'left',
+				'currentState' => array(
+					'source'  => 'component_text_alignment',
+					'default' => 'left',
+				),
 			),
 		);
 
@@ -3182,7 +3306,7 @@ class MWPSFE_Handler_Core_Table extends MWPSFE_Abstract_Text_Edit_Handler implem
 							array(
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'table_head_cell', $attribute_capabilities['align'] ),
 								$this->get_editor_block_attribute_change_operation( 'set_text_align', 'table_head_cell', $attribute_capabilities['columnAlignment'] ),
-								$this->get_editor_block_attribute_change_operation( 'set_column_align', 'table_head_cell', $attribute_capabilities['columnAlignment'] ),
+								$this->get_editor_block_attribute_change_operation( 'set_column_align', 'table_head_cell', $attribute_capabilities['columnAlignment'], $column_scope_input ),
 								$this->get_editor_text_rewrite_operation( 'table_head_cell' ),
 								$this->get_editor_inline_format_change_operation( 'table_head_cell', array( 'bold', 'italic', 'strikethrough' ) ),
 								$this->get_editor_inline_attribute_change_operation( 'table_head_cell', 'link', $inline_format_capabilities ),
@@ -3236,7 +3360,7 @@ class MWPSFE_Handler_Core_Table extends MWPSFE_Abstract_Text_Edit_Handler implem
 							array(
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'table_body_cell', $attribute_capabilities['align'] ),
 								$this->get_editor_block_attribute_change_operation( 'set_text_align', 'table_body_cell', $attribute_capabilities['columnAlignment'] ),
-								$this->get_editor_block_attribute_change_operation( 'set_column_align', 'table_body_cell', $attribute_capabilities['columnAlignment'] ),
+								$this->get_editor_block_attribute_change_operation( 'set_column_align', 'table_body_cell', $attribute_capabilities['columnAlignment'], $column_scope_input ),
 								$this->get_editor_text_rewrite_operation( 'table_body_cell' ),
 								$this->get_editor_inline_format_change_operation( 'table_body_cell', array( 'bold', 'italic', 'strikethrough' ) ),
 								$this->get_editor_inline_attribute_change_operation( 'table_body_cell', 'link', $inline_format_capabilities ),
@@ -3290,7 +3414,7 @@ class MWPSFE_Handler_Core_Table extends MWPSFE_Abstract_Text_Edit_Handler implem
 							array(
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'table_foot_cell', $attribute_capabilities['align'] ),
 								$this->get_editor_block_attribute_change_operation( 'set_text_align', 'table_foot_cell', $attribute_capabilities['columnAlignment'] ),
-								$this->get_editor_block_attribute_change_operation( 'set_column_align', 'table_foot_cell', $attribute_capabilities['columnAlignment'] ),
+								$this->get_editor_block_attribute_change_operation( 'set_column_align', 'table_foot_cell', $attribute_capabilities['columnAlignment'], $column_scope_input ),
 								$this->get_editor_text_rewrite_operation( 'table_foot_cell' ),
 								$this->get_editor_inline_format_change_operation( 'table_foot_cell', array( 'bold', 'italic', 'strikethrough' ) ),
 								$this->get_editor_inline_attribute_change_operation( 'table_foot_cell', 'link', $inline_format_capabilities ),
@@ -3423,6 +3547,7 @@ class MWPSFE_Handler_Core_Image extends MWPSFE_Abstract_Schema_Media_Edit_Handle
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
+								$this->get_editor_media_replace_operation( 'image' ),
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'image', $align_attribute_capability ),
 							)
 						),
@@ -3553,6 +3678,7 @@ class MWPSFE_Handler_Core_Icon extends MWPSFE_Abstract_Schema_Media_Edit_Handler
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
+								$this->get_editor_media_replace_operation( 'icon' ),
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'icon', $align_attribute_capability ),
 							)
 						),
@@ -3649,6 +3775,7 @@ class MWPSFE_Handler_Core_File extends MWPSFE_Abstract_Schema_Media_Edit_Handler
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
+								$this->get_editor_media_replace_operation( 'file' ),
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'file', $align_attribute_capability ),
 							)
 						),
@@ -3804,6 +3931,7 @@ class MWPSFE_Handler_Core_Audio extends MWPSFE_Abstract_Schema_Media_Edit_Handle
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
+								$this->get_editor_media_replace_operation( 'audio' ),
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'audio', $align_attribute_capability ),
 							)
 						),
@@ -3935,6 +4063,7 @@ class MWPSFE_Handler_Core_Video extends MWPSFE_Abstract_Schema_Media_Edit_Handle
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
+								$this->get_editor_media_replace_operation( 'video' ),
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'video', $align_attribute_capability ),
 							)
 						),
@@ -4068,6 +4197,7 @@ class MWPSFE_Handler_Core_Cover extends MWPSFE_Abstract_Schema_Media_Container_E
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
+								$this->get_editor_media_replace_operation( 'background' ),
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'background', $align_attribute_capability ),
 							)
 						),
@@ -4159,6 +4289,7 @@ class MWPSFE_Handler_Core_Media_Text extends MWPSFE_Abstract_Schema_Media_Contai
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
+								$this->get_editor_media_replace_operation( 'media' ),
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'media', $align_attribute_capability ),
 							)
 						),

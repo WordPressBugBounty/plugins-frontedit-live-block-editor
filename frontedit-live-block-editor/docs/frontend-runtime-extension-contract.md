@@ -69,9 +69,10 @@ Expected shape:
     runtimeInspection: true,
     editableBlockDiscovery: true,
     editingRuntimeResolution: true,
-    textComponentOperations: true,
-    structuredEditOperations: true,
-    mediaComponentOperations: true,
+    publicOperationContracts: true,
+    operations: true,
+    operationPreflight: true,
+    listOperationContracts: true,
     mediaInspection: true,
     mediaSessionControl: true,
     explicitStaging: true,
@@ -116,7 +117,10 @@ may call the following post-scoped, read-only abilities:
    UUIDs, block types, edit handler IDs, and source-text summaries.
 2. `mwpsfe/get-editable-block` with `post_id` and `uuid` to retrieve focused
    content for one already-authorized editable block.
-3. `mwpsfe/get-frontend-runtime-contract` with `post_id` to retrieve this
+3. `mwpsfe/get-public-operation-contract` with `post_id` and `uuid` to retrieve
+   the handler-derived public operation contract and its current public input
+   state for one already-authorized editable block.
+4. `mwpsfe/get-frontend-runtime-contract` with `post_id` to retrieve this
    canonical browser contract.
 
 These abilities authorize the current user against the exact requested post;
@@ -125,6 +129,33 @@ an external save path. WordPress core remains responsible for page discovery.
 Once the browser runtime is present, integrations must still verify
 availability through `SFE.PublicApi.getApiInfo()` and use
 `SFE.PublicApi.getEditableBlocks()` to enumerate the live page.
+
+#### Server-side `current_operation_state`
+
+`mwpsfe/get-public-operation-contract` returns an immutable `contract` and a
+separate mutable `current_operation_state` array. Each record is:
+
+```json
+{
+  "componentId": "content",
+  "operationId": "rewrite_text",
+  "state": {
+    "runs": []
+  }
+}
+```
+
+The record's `state` object contains only the public inputs declared by that
+operation. FrontEdit derives these values from the owning handler's schema and
+current parsed block state; it never publishes attributes, bindings, selectors,
+or executor metadata. Integrations must use this projection when a generated
+proposal needs to preserve a current text, media, link, or setting value. They
+must not reconstruct an equivalent map from raw block attributes.
+
+`core/list` keeps its documented browser-owned current-state surface through
+`SFE.PublicApi.getListStructure(...)` and its operation descriptor through
+`SFE.PublicApi.getListOperationContract(...)`, because its runtime list-item
+UUIDs are session-scoped rather than server-side generic operation IDs.
 
 #### `getEditableBlocks() -> EditableBlock[]`
 
@@ -255,6 +286,55 @@ Rules:
 3. `attributeChanges` is optional. When supplied, FrontEdit resolves the runtime against those pending block attribute changes.
 4. The returned runtime data is read-only snapshot data except for documented DOM element references inside component entries.
 
+#### `getEditOperationContract(options) -> EditOperationContract|null`
+
+Return FrontEdit's read-only, schema-derived contract for AI or other generated
+operation proposals. It is a compact projection of the currently resolved
+handler components and their `editor.operations`; it does not expose a DOM
+element, route, save control, nonce, or mutable editor state.
+
+```js
+const contract = SFE.PublicApi.getEditOperationContract({ uuid, element, handlerId });
+```
+
+```ts
+type EditOperationContract = {
+  contractVersion: 1;
+  uuid: string;
+  operations: Array<{
+    id: string;
+    componentId: string;
+    inputs: Record<string, { required: boolean; type: string }>;
+    values?: Array<string | number | boolean | null>;
+    allowedRunFormats?: string[];
+    requiredRunFormatAttributes?: Record<string, string[]>;
+  }>;
+};
+```
+
+Rules:
+
+1. Use this contract to discover the exact operations, allowed values, and
+   required inputs for this live block. Do not infer them from a block name or
+   toolbar label.
+2. The contract deliberately excludes attribute paths, selectors, executor
+   kinds, serialization behavior, routes, and mutable editor internals.
+3. It is not an authorization or mutation API. Generated proposals remain
+   untrusted and must pass FrontEdit preflight before apply.
+4. A handler must explicitly mark an operation `publicOperation: true` before
+   it appears here. FrontEdit does not maintain a second public allowlist or
+   synthesize generic operations from a block type.
+5. `allowedRunFormats`, when present for a `rich_text_runs` input, contains
+   the handler-declared format tokens permitted in each returned run.
+   `requiredRunFormatAttributes`, when present, maps a format token to the
+   minimum named values that must be present in that run's
+   `formatAttributes[formatToken]` object. It exposes neither rendering tags,
+   optional format data, selectors, nor mutation details.
+6. List editing retains its established UUID-oriented list API. Its legal
+   operation kinds and inputs are exposed separately through
+   `getListOperationContract(...)`; they are not part of this generic
+   generated-proposal envelope.
+
 #### `getEditableComponents(options) -> EditableComponent[]`
 
 Returns the runtime-editable components for the resolved block.
@@ -263,233 +343,258 @@ Returns the runtime-editable components for the resolved block.
 
 Returns the default editable component for the resolved block, if one exists.
 
-### Block Attribute Runtime
+### Public Operation Runtime
 
-Schema-backed block attribute changes flow through the shared executor. Public callers use `applyBlockAttributeOperations(...)` for both single-operation and multi-operation batches, and each entry must reference one schema-declared operation ID exposed through `resolveEditingRuntime(...).runtime.editableComponents[*].editor.operations`.
-
-#### `applyBlockAttributeOperations(options) -> BlockAttributeOperationResult|null`
-
-Apply one or more schema-declared block attribute mutations as one runtime batch.
+V1 uses one attribute-free public operation envelope:
 
 ```js
-const result = SFE.PublicApi.applyBlockAttributeOperations({
-  uuid,
-  operations: [
-    { id: 'set_heading_level', value: 2 },
-    { id: 'set_text_align', value: 'center' },
-    { id: 'set_align', value: 'wide' },
-    { id: 'set_column_align', value: 'right', columns: [0] },
-    { id: 'set_column_align', value: 'right', columns: [0, 1, 2] },
-    { id: 'set_column_align', value: 'left', columns: 'all' }
-  ]
-});
+const operations = [
+  {
+    id: operation.id,
+    componentId: operation.componentId,
+    inputs: { /* only values declared by getEditOperationContract() */ }
+  }
+];
+
+const preflight = SFE.PublicApi.preflightOperations({ uuid, operations });
+if (preflight?.valid === true) {
+  SFE.PublicApi.applyOperations({ uuid, operations });
+}
 ```
+
+#### `preflightOperations(options) -> OperationPreflightResult|null`
+
+Validate an opaque operation batch against an already open editor without
+mutating DOM, history, preview state, or saved content.
+
+```ts
+type OperationPreflightResult = {
+  uuid: string;
+  valid: boolean;
+  validatedOperationIds: string[];
+  errors: Array<{ code: string; id?: string; componentId?: string }>;
+};
+```
+
+#### `applyOperations(options) -> OperationResult|null`
+
+Stage the same preflighted opaque batch through FrontEdit's shared schema
+executor. FrontEdit resolves the operation locally from the active handler,
+performs normal preview and history work, and leaves review, save, and cancel
+under its normal editor lifecycle.
 
 Rules:
 
-1. `uuid` is required.
-2. The target editor must already be open.
-3. `operations` is required. Callers should pass a one-item array when only one mutation is needed.
-4. `operations` are applied in order against the current live editor state.
-5. Each entry must supply a schema operation `id` plus a concrete `value`.
-6. Column-scoped table alignment operations such as `set_column_align` must supply `columns`.
-7. `columns` must be either an array of zero-based column indexes such as `[0]` or `[0, 1, 2]`, or the string `'all'`.
-8. Scalar convenience values such as `columns: 0` are intentionally invalid; callers must always send an array for explicit column indexes.
-9. Public callers must not send raw `block_attribute_change` payloads or direct attribute paths such as `style.typography.textAlign`.
+1. Call `openEditor(...)` explicitly before preflight or apply.
+2. Each operation must exactly match a declaration from `getEditOperationContract(...)`.
+3. Callers must not send `kind`, `attribute`, `attributes`, `bindingSource`, DOM selectors, or serialization metadata.
+4. Callers processing generated or untrusted content must require `valid === true` before apply.
+5. This is a staging API, never a direct-save API.
 
-### Component Runtime
+`applyOperations(...)` returns `appliedOperationCount` in addition to its
+operation ID summary. Integrations that generate a batch must treat the stage
+as failed unless that count equals the requested operation count.
 
-The Component Runtime API applies schema-backed component content updates to an
-open editor. It supports replacing the content of one or more runtime
-components in a single batch while automatically normalizing the supplied
-content against the component's schema.
+### V1 Operation Recipes
 
-Use `applyTextComponentOperations(...)` for direct component content replacement.
-For compatibility with existing integrations, `applyStructuredEdit(...)`
-continues to provide the higher-level batch API and internally delegates
-component updates to the same execution pipeline.
+All non-list mutations use the schema-derived operation envelope. Discover the
+operation on the live block, open that block's editor, preflight the exact
+batch, then apply the same batch. FrontEdit owns the resulting preview,
+history, review, cancel, and save lifecycle.
 
-#### `applyTextComponentOperations(options) -> ComponentOperationResult|null`
-
-Apply one or more schema-backed component content replacements as one runtime
-batch.
+#### Operation Envelope
 
 ```js
-const result = SFE.PublicApi.applyTextComponentOperations({
+const contract = SFE.PublicApi.getEditOperationContract({
   uuid,
-  operations: [
-    {
-      kind: 'replace_component_content',
-      componentId: 'content',
-      bindingSource: 'html',
-      runs: [
-        {
-          text: 'Updated CTA copy',
-          formats: ['link'],
-          formatAttributes: {
-            link: {
-              href: 'https://example.com',
-              settings: {
-                new_tab: true,
-                no_follow: true
-              }
-            }
-          }
-        }
-      ]
-    }
-  ]
+  element,
+  handlerId
 });
+
+if (!contract) {
+  throw new Error('No edit-operation contract is available for this block.');
+}
+
+const getOperation = predicate => {
+  const operation = contract.operations.find(predicate);
+  if (!operation) {
+    throw new Error('The requested operation is not supported by this block.');
+  }
+  return operation;
+};
+
+const stage = async operations => {
+  const preflight = SFE.PublicApi.preflightOperations({ uuid, operations });
+  if (
+    preflight?.valid !== true ||
+    preflight.validatedOperationIds.length !== operations.length
+  ) {
+    throw new Error('FrontEdit rejected the operation batch.');
+  }
+
+  const result = SFE.PublicApi.applyOperations({ uuid, operations });
+  if (result?.appliedOperationCount !== operations.length) {
+    throw new Error('FrontEdit did not stage every operation.');
+  }
+
+  return result;
+};
 ```
+
+Every generic operation has exactly this shape:
 
 ```js
-const result = SFE.PublicApi.applyTextComponentOperations({
-  uuid,
-  operations: [
-    {
-      id: 'set_button_link',
-      kind: 'link_change',
-      componentId: 'label',
-      format: 'buttonLink',
-      href: 'https://example.com/pricing',
-      new_tab: true,
-      no_follow: true
-    }
-  ]
-});
+{
+  id: operation.id,
+  componentId: operation.componentId,
+  inputs: {
+    // Exactly the declared input names and values for this operation.
+  }
+}
 ```
 
-Rules:
+Use the operation's `inputs` map as the complete field contract. Include every
+required input, omit optional inputs you do not need, and do not send `kind`,
+attribute paths, selectors, binding metadata, or other internal fields.
 
-1. `uuid` is required.
-2. The target editor must already be open.
-3. `operations` is required. Callers should pass a one-item array when only one replacement is needed.
-4. Each operation must target one runtime `componentId`.
-5. `replace_component_content` is the canonical public text/content mutation kind.
-6. `link_change` is the canonical public host-link mutation kind for element-scoped anchor components such as `core/button`.
-7. `link_change` accepts `href` or `url`, optional `target` or `linkTarget`, optional `rel`, and link settings via either top-level `new_tab` / `no_follow` fields or `settings.{new_tab,no_follow}`.
-8. `link_change` is intended for components whose editable host element is itself the canonical anchor. It is not the replacement path for inline text links inside larger rich-text content.
-9. Public callers should send normalized `runs` payloads for `replace_component_content`. Literal newline characters inside `runs[*].text` are interpreted through the component's schema/runtime editor options.
-10. FrontEdit also accepts `lines` as an undocumented compatibility input while callers migrate to direct `runs`, but `runs` is the stable public contract.
-11. Link-like format attributes inside `replace_component_content` runs are normalized by FrontEdit against the component's schema-declared inline format capabilities, including `settings.new_tab` and `settings.no_follow`.
+#### Text Replacement
 
-#### `ComponentOperationResult`
-
-Successful component runtime mutations return:
-
-1. `uuid` (string): target block UUID
-2. `updatedComponentIds` (array of strings): component IDs whose live DOM was updated
-3. `operationsApplied` (array of strings): applied operation IDs or canonical kinds in execution order
-
-### Media Runtime
-
-The Media Runtime API applies schema-backed media replacements to an open media
-editing session. It uses the same component targeting model as the component
-content runtime, but delegates the actual preview mutation through FrontEdit's
-existing media-session host so resolved media attributes and save-time behavior
-stay aligned with the native editor flow.
-
-#### `applyMediaComponentOperations(options) -> MediaOperationResult|null`
-
-Apply one or more schema-backed media replacements to the active media session.
+Find an operation that declares a `rich_text_runs` input and submit the complete
+replacement run sequence for that component:
 
 ```js
-const result = SFE.PublicApi.applyMediaComponentOperations({
+const rewrite = getOperation(operation => (
+  operation.componentId === 'content' &&
+  operation.inputs.runs?.type === 'rich_text_runs'
+));
+
+await SFE.PublicApi.openEditor({
   uuid,
-  operations: [
-    {
-      kind: 'replace_component_media',
-      componentId: 'image',
-      url: 'https://example.com/uploads/updated-image.jpg',
-      attachmentId: 123,
-      source: 'library'
-    }
-  ]
+  element,
+  handlerId,
+  componentId: rewrite.componentId
 });
+
+await stage([{
+  id: rewrite.id,
+  componentId: rewrite.componentId,
+  inputs: {
+    runs: [
+      {
+        text: 'Updated copy',
+        formats: [],
+        formatAttributes: {}
+      }
+    ]
+  }
+}]);
 ```
 
-Rules:
+Use only `allowedRunFormats` exposed by that operation. When
+`requiredRunFormatAttributes` declares values for a format, include them in the
+matching run's `formatAttributes` object.
 
-1. `uuid` is required.
-2. The target editor must already be open.
-3. The target component must already own the active media-editing session.
-4. `operations` is required. Callers should pass a one-item array when only one replacement is needed.
-5. Each operation must target one runtime `componentId`.
-6. `replace_component_media` is the canonical public media mutation kind.
-7. `url` is required.
-8. `attachmentId` is optional.
-9. `source` may be `'library'` or `'input'` and defaults to the input-style transition when omitted.
+#### Scalar Block Setting
 
-#### `MediaOperationResult`
-
-Successful media runtime mutations return:
-
-1. `uuid` (string): target block UUID
-2. `updatedComponentIds` (array of strings): component IDs whose live DOM was updated
-3. `operationsApplied` (array of strings): applied operation IDs or canonical kinds in execution order
-
-### Structured Edit Runtime
-
-Structured non-list edits use the same high-level pattern as public list mutations:
-
-1. open the editor for the target block
-2. apply normalized operations through the public API
-3. let FrontEdit own DOM mutation, toolbar sync, and history persistence
-
-#### `applyStructuredEdit(options) -> StructuredEditResult|null`
-
-Apply one normalized structured edit batch to the active schema editor.
+Settings such as alignment or heading level are schema operations with a
+declared scalar input. The concrete ID, component, allowed values, and any
+additional inputs come from the resolved contract:
 
 ```js
-const result = SFE.PublicApi.applyStructuredEdit({
+const alignment = getOperation(operation => (
+  operation.componentId === 'content' &&
+  operation.inputs.value?.type === 'scalar' &&
+  Array.isArray(operation.values) &&
+  operation.values.includes('center')
+));
+
+await SFE.PublicApi.openEditor({
   uuid,
-  componentUpdates: [
-    {
-      componentId: 'content',
-      bindingSource: 'html',
-      runs: [
-        { text: 'Updated heading copy' }
-      ]
-    }
-  ],
-  attributeOperations: [
-    { id: 'set_heading_level', value: 1 },
-    { id: 'set_align', value: 'full' },
-    { id: 'set_text_align', value: 'right' }
-  ]
+  element,
+  handlerId,
+  componentId: alignment.componentId
 });
+
+await stage([{
+  id: alignment.id,
+  componentId: alignment.componentId,
+  inputs: { value: 'center' }
+}]);
 ```
 
-Rules:
+If the declared operation has additional required inputs, include those exact
+fields in `inputs`. For example, a column-scoped setting can require a
+`columns` input in addition to `value`.
 
-1. `uuid` is required.
-2. The target editor must already be open.
-3. `componentUpdates` are applied first through the shared component executor.
-4. `attributeOperations` are then applied through the shared block-attribute executor.
-5. The batch creates at most one FrontEdit history entry after all component and attribute mutations finish.
-6. `attributeOperations` must use schema operation IDs, not raw `block_attribute_change` payloads or direct attribute paths.
-7. Callers should pass normalized capability-driven payloads rather than manually mutating the editor DOM outside this seam.
+#### Host Link Update
 
-#### `StructuredEditResult`
+For an anchor-host component, select the operation that declares the URL input
+and provide its declared optional link settings only when needed:
 
-Successful structured edits return:
+```js
+const link = getOperation(operation => (
+  operation.componentId === 'label' &&
+  operation.inputs.href?.type === 'url'
+));
 
-1. `uuid` (string): target block UUID
-2. `updatedComponentIds` (array of strings): component IDs whose live DOM was updated
-3. `operationsApplied` (array of strings): schema operation IDs that mutated the live editor state when available
-4. `attributeChanges` (object): current tracked block attribute change map after the batch
+await SFE.PublicApi.openEditor({
+  uuid,
+  element,
+  handlerId,
+  componentId: link.componentId
+});
 
-#### `BlockAttributeOperationResult`
+await stage([{
+  id: link.id,
+  componentId: link.componentId,
+  inputs: {
+    href: 'https://example.com/pricing',
+    new_tab: true
+  }
+}]);
+```
 
-Successful block-attribute runtime mutations return:
+#### Media URL Replacement
 
-1. `uuid` (string): target block UUID
-2. `operationsApplied` (array of strings): schema operation IDs that actually mutated the live editor state
-3. `attributeChanges` (object): current tracked block attribute change map after the batch
+When the live operation contract declares a URL input for a media component,
+stage the URL as a generic operation. The operation ID remains contract-owned:
+
+```js
+const media = getOperation(operation => (
+  operation.componentId === 'image' &&
+  operation.inputs.url?.type === 'url'
+));
+
+await SFE.PublicApi.openEditor({
+  uuid,
+  element,
+  handlerId,
+  componentId: media.componentId
+});
+
+await stage([{
+  id: media.id,
+  componentId: media.componentId,
+  inputs: {
+    url: 'https://example.com/uploads/updated-image.jpg',
+    source: 'input'
+  }
+}]);
+```
+
+Include `attachmentId` only when the media source provides one. When the
+contract declares `source`, use `library` for a WordPress media-library item or
+`input` for a direct URL.
+
+For a selected WordPress media-library or upload item, use the documented
+[`applyActiveMediaSelection(options)`](#applyactivemediaselectionoptions---editorsnapshotnull)
+method in [Media Inspection And Session Control](#media-inspection-and-session-control).
+That method's reference includes its required active-session setup and exact
+request shape.
 
 ### List Runtime
 
-`V1` includes a public list-tree runtime for `core/list`-style blocks that are
+V1 retains the public list-tree runtime for `core/list`-style blocks that are
 edited as one root block while exposing nested item/list structure to external
 callers.
 
@@ -511,9 +616,77 @@ Rules:
 2. The target block must resolve to a live `UL` or `OL` root.
 3. The return value is a read-only structural snapshot of the live DOM tree.
 
+#### `getListOperationContract(options) -> ListOperationContract|null`
+
+Return the FrontEdit-owned, read-only operation descriptor for one live list
+root. This is the machine-readable source of truth for public list operation
+kinds and their exact input fields. Integrations must use it rather than
+maintaining a separate list-operation catalog.
+
+```js
+const contract = SFE.PublicApi.getListOperationContract({
+  uuid,
+  element
+});
+```
+
+```ts
+type ListOperationContract = {
+  contractVersion: 1;
+  uuid: string;
+  operations: Array<{
+    kind: string;
+    inputs: Record<string, {
+      required: true;
+      type: 'existing_list_item_uuid' | 'new_list_item_uuid' | 'direct_list_item_html';
+    }>;
+  }>;
+};
+```
+
+Rules:
+
+1. `uuid` is required unless `element` can be resolved to a block UUID.
+2. The target must resolve to a live `UL` or `OL` root.
+3. Each `inputs` map is exact: callers must not add an input not declared for
+   that operation.
+4. `existing_list_item_uuid` accepts an item UUID from the current
+   `getListStructure(...)` result. `new_list_item_uuid` is a fresh caller-owned
+   item UUID for an insertion. `direct_list_item_html` is direct item text HTML
+   and must not contain `li`, `ul`, or `ol` wrappers.
+5. This is an inspection API, not mutation authority. Callers still must use
+   `preflightListOperations(...)` successfully before `applyListOperations(...)`.
+
 #### `applyListOperations(options) -> ListOperationResult|null`
 
 Apply one or more structural list mutations as one runtime batch.
+
+#### `preflightListOperations(options) -> ListOperationPreflightResult|null`
+
+Validate a UUID-oriented list batch against the open FrontEdit list editor
+without mutating it.
+
+```js
+const preflight = SFE.PublicApi.preflightListOperations({ uuid, operations });
+if (preflight?.valid === true) {
+  SFE.PublicApi.applyListOperations({ uuid, operations });
+}
+```
+
+Return shape:
+
+```ts
+type ListOperationPreflightResult = {
+  uuid: string;
+  valid: boolean;
+  validatedOperationKinds: string[];
+  errors: Array<{ code: string; index?: number }>;
+};
+```
+
+`insert_child` validates its supplied insertion command during preflight. Its
+internal follow-up indent is resolved only during the subsequent FrontEdit
+apply because the new runtime item does not exist until that point.
 
 ```js
 const result = SFE.PublicApi.applyListOperations({
@@ -539,13 +712,14 @@ Rules:
 3. `operations` are applied in order against the live mutated tree.
 4. Every operation must supply the correct documented UUID target token family for its kind.
 5. FrontEdit resolves each operation's runtime UUIDs against the current post-mutation tree immediately before that operation runs.
-6. Public callers must use only the documented high-level list-operation kinds.
+6. Public callers must use only operation kinds and exact inputs advertised by
+   `getListOperationContract(...)`.
 7. Some public operations may expand into multiple internal primitive mutations. For example, `insert_child` inserts the new item after the parent item, then indents it so the tracker creates the nested child list through the normal editor path.
 8. Successful batches return one updated list structure snapshot.
 
-#### Supported list operation kinds
+#### Current V1 list operation descriptor
 
-List runtime operations currently include:
+The contract currently advertises:
 
 1. `update_list_item_text`
 2. `insert_before`
@@ -560,8 +734,8 @@ List runtime operations currently include:
 
 These are the public API kinds only. Internally FrontEdit still executes lower-level
 primitive list operations such as `insert_list_item`, `move_list_item`, and
-`toggle_list_type`, but only the documented public surface is part of the
-runtime contract.
+`toggle_list_type`, but only the descriptor returned by
+`getListOperationContract(...)` is the machine-readable runtime contract.
 
 #### List operation payloads
 
@@ -578,7 +752,7 @@ runtime contract.
 | `outdent_list_item` | `kind`, `itemUuid` | -- | Outdents one existing item through the normal editor list behavior. |
 | `toggle_list_type` | `kind`, `itemUuid` | -- | Toggles the containing list for the referenced item between ordered and unordered. |
 
-`contentHtml` is required for operations that create or replace item content. It represents the direct item text HTML only. It must not include wrapping `<li>`, `<ul>`, or `<ol>` elements.
+`contentHtml` is required for operations that create or replace item content. It represents the direct item text HTML only. It must not include wrapping `<li>`, `<ul>`, or `<ol>` elements. Consumers must derive whether an operation carries content from its `direct_list_item_html` input descriptor, not from a copied operation-kind allowlist.
 
 #### Public target-token rules
 
@@ -740,7 +914,7 @@ Rules:
 
 ### Explicit Staging
 
-`V1` supports explicit block-state staging only.
+V1 supports explicit block-state staging only.
 
 Staging is editor preparation, not external save execution. External plugins may stage block state and open or guide the FrontEdit editor, but the user must complete saving through FrontEdit's standard save UI and normal FrontEdit save workflow.
 
@@ -763,7 +937,7 @@ Rules:
 2. `handlerId` is optional metadata for the caller and diagnostics.
 3. `blockState` must match the shape FrontEdit's canonical block hydration path expects.
 4. Staged block state is temporary and applies only through the documented FrontEdit runtime path.
-5. Staged changes do not create a supported external save path in `V1`.
+5. Staged changes do not create a supported external save path in V1.
 
 #### `clearStagedBlockState(uuid) -> void`
 
@@ -1118,7 +1292,7 @@ not serialized Gutenberg block markup and must not be used as a write payload.
 
 ## Stable Events
 
-`V1` events are observable only.
+V1 events are observable only.
 
 They provide visibility into FrontEdit runtime lifecycle. They are not interception points and do not allow cancellation, mutation, or alternate control flow through event payload side effects.
 
@@ -1326,7 +1500,7 @@ Required fields:
 
 ## Candidate APIs Under Evaluation
 
-The following APIs are not part of `V1` and are intentionally non-contractual in this document:
+The following APIs are not part of V1 and are intentionally non-contractual in this document:
 
 1. `consumeMediaSelection()`
 2. `getActiveMediaSession()`
@@ -1355,7 +1529,7 @@ The following names and object families are explicitly private and unsupported f
 14. Underscore-prefixed properties such as `_mwpSchemaRuntime` and `_mwpSchemaMediaSession`
 15. Undocumented DOM classes and data attributes
 
-Private APIs may change without deprecation, compatibility shims, or contract version notice.
+Private APIs may change without a public contract version notice.
 
 ## Extension Rules
 
@@ -1367,5 +1541,5 @@ External runtime integrations must follow these rules:
 4. Use documented lifecycle events instead of patching editor open or close methods.
 5. Use stable snapshots only for observation and coordination, never for direct mutation of live FrontEdit state.
 6. Preserve FrontEdit's canonical save pipeline and do not bypass block serialization rules.
-7. Do not treat `V1` as a supported direct-save API; saving remains user-driven through standard FrontEdit controls.
+7. Do not treat V1 as a supported direct-save API; saving remains user-driven through standard FrontEdit controls.
 8. When an integration refreshes the shared REST nonce during a long-lived session, it should synchronize FrontEdit through `SFE.PublicApi.setRestNonce(...)` instead of mutating `SFE.ManagerData` directly.

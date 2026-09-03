@@ -2,16 +2,17 @@
  * Text editor - all contenteditable text-editing setup
  *
  * Reads (via globals):
- *   SFE.Context            - .draftEditState
- *   SFE.ElementPrep        - .getCleanHTML, .getContent
+ *   SFE.Context                 - .draftEditState
+ *   SFE.ElementPrep             - .getCleanHTML, .getContent
  *   SFE.OverlayManager
- *   SFE.PositionManager    - .positionFloatingElements
- *   SFE.FocusManager       - .createFocusManager
- *   SFE.handleInlineSave   - set by SaveManager
- *   SFE.closeInPlaceEditor - set by EditorLifecycle
- *   SFE.startMediaEditing  - set by frontend-inline-edit.js (via SFE.MediaEditor)
- *   SFE.MWPEditor          - rich text editor class
- *   SFE.ManagerData        - .handlers
+ *   SFE.PositionManager         - .positionFloatingElements
+ *   SFE.FocusManager            - .createFocusManager
+ *   SFE.handleInlineSave        - set by SaveManager
+ *   SFE.closeInPlaceEditor      - set by EditorLifecycle
+ *   SFE.startMediaEditing       - set by frontend-inline-edit.js (via SFE.MediaEditor)
+ *   SFE.MWPEditor               - rich text editor class
+ *   SFE.SchemaOperationExecutor - schema-backed attribute and virtual-binding semantics
+ *   SFE.ManagerData             - .handlers
  *
  * Exposes: SFE.TextEditor
  *   { startTextEditing, startMultiComponentEditing, refreshEditableComponents }
@@ -232,6 +233,52 @@
 		return values.length ? values : null;
 	}
 
+	/**
+	 * Normalize schema-declared operation inputs before they are handed to an
+	 * editor host.
+	 *
+	 * TextEditor receives runtime schema data after the schema engine has built
+	 * it, but it owns a second defensive clone for component editor options.
+	 * Keeping this contract lossless at both boundaries is required for the
+	 * shared operation executor to validate toolbar and public operations.
+	 *
+	 * @param {Object} rawInputs Raw operation input definitions.
+	 * @returns {Object|null} Normalized operation input definitions or null.
+	 */
+	function normalizeEditorOperationInputs(rawInputs) {
+		if (!rawInputs || typeof rawInputs !== 'object' || Array.isArray(rawInputs)) {
+			return null;
+		}
+
+		const normalized = {};
+		Object.keys(rawInputs).forEach((rawInputName) => {
+			const inputName = typeof rawInputName === 'string' ? rawInputName.trim() : '';
+			const rawDefinition = rawInputs[rawInputName];
+			const type = typeof rawDefinition?.type === 'string' ? rawDefinition.type.trim() : '';
+			if (
+				!/^[a-z][a-z0-9_]*$/.test(inputName) ||
+				!rawDefinition ||
+				typeof rawDefinition !== 'object' ||
+				Array.isArray(rawDefinition) ||
+				(
+					type !== 'scalar' &&
+					type !== 'zero_based_indexes_or_all' &&
+					type !== 'rich_text_runs' &&
+					type !== 'url'
+				)
+			) {
+				return;
+			}
+
+			normalized[inputName] = {
+				required: rawDefinition.required === true,
+				type,
+			};
+		});
+
+		return Object.keys(normalized).length ? normalized : null;
+	}
+
 	function normalizeEditorOperation(rawOperation) {
 		if (!rawOperation || typeof rawOperation !== 'object' || Array.isArray(rawOperation)) {
 			return null;
@@ -251,6 +298,19 @@
 		const formats = normalizeEditorOperationStringArray(rawOperation.formats);
 		const targetModes = normalizeEditorOperationStringArray(rawOperation.targetModes);
 		const values = normalizeEditorOperationValues(rawOperation.values);
+		const inputs = normalizeEditorOperationInputs(rawOperation.inputs);
+
+		if (
+			kind === 'block_attribute_change' &&
+			(
+				!inputs ||
+				!inputs.value ||
+				inputs.value.required !== true ||
+				inputs.value.type !== 'scalar'
+			)
+		) {
+			return null;
+		}
 
 		if (attribute) {
 			normalized.attribute = attribute;
@@ -269,6 +329,12 @@
 		}
 		if (values) {
 			normalized.values = values;
+		}
+		if (inputs) {
+			normalized.inputs = inputs;
+		}
+		if (rawOperation.publicOperation === true) {
+			normalized.publicOperation = true;
 		}
 		if (Object.prototype.hasOwnProperty.call(rawOperation, 'unsetValue')) {
 			normalized.unsetValue = rawOperation.unsetValue;
@@ -665,6 +731,9 @@
 				component.type.trim().toLowerCase() === 'file'
 			) ? 'file' : 'text';
 			const attribute = typeof component.attribute === 'string' ? component.attribute.trim() : '';
+			const bindingSource = typeof component.bindingSource === 'string'
+				? component.bindingSource.trim().toLowerCase()
+				: '';
 			if (componentType !== 'file' && !attribute) return;
 
 			const providedElement = component.element && component.element.nodeType === Node.ELEMENT_NODE
@@ -734,6 +803,7 @@
 					: '';
 			} else {
 				normalizedComponent.attribute = attribute;
+				normalizedComponent.bindingSource = bindingSource;
 			}
 
 			normalized.push(normalizedComponent);
@@ -1267,8 +1337,11 @@
 	}
 
 	/**
-	 * Seed the text session's initial entry with the current live block-attribute
-	 * state once the active component is fully registered.
+	 * Seed the text session's initial entry with the current live material
+	 * block-attribute state once the active component is fully registered.
+	 *
+	 * Virtual component bindings serialize from their own DOM targets and must
+	 * not be collapsed into the shared attribute map used by this baseline.
 	 *
 	 * @param {Object} editorState Active editor state.
 	 * @param {Object} mwpEditor   Active rich-text editor instance.
@@ -1317,6 +1390,9 @@
 				executor.getTextAlignmentCapability(mwpEditor, operation)
 			) {
 				const textAlignmentCapability = executor.getTextAlignmentCapability(mwpEditor, operation);
+				if (executor.isVirtualBindingBackedTextAlignmentCapability(textAlignmentCapability)) {
+					return;
+				}
 				trackedValue = typeof executor.normalizeBlockAttributeTrackedValue === 'function'
 					? executor.normalizeBlockAttributeTrackedValue(textAlignmentCapability, mwpEditor.getTextAlignmentState?.())
 					: mwpEditor.getTextAlignmentState?.();

@@ -343,6 +343,41 @@
 		return values.length ? values : null;
 	}
 
+	/**
+	 * Normalize the input contract declared by one schema operation.
+	 *
+	 * Operation inputs are part of the schema-owned runtime contract. Preserve
+	 * only the generic input types that FrontEdit's operation executor supports
+	 * so downstream editor hosts do not receive an ambiguous or mutable shape.
+	 *
+	 * @param {Object} rawInputs Raw schema input definitions.
+	 * @returns {Object|null} Normalized input definitions or null.
+	 */
+	function normalizeEditorOperationInputs( rawInputs ) {
+		if ( !isPlainObject( rawInputs ) ) return null;
+
+		const normalized = {};
+		Object.keys( rawInputs ).forEach( rawInputName => {
+			const inputName = typeof rawInputName === 'string' ? rawInputName.trim() : '';
+			const rawDefinition = rawInputs[ rawInputName ];
+			const type = typeof rawDefinition?.type === 'string' ? rawDefinition.type.trim() : '';
+			if (
+				!/^[a-z][a-z0-9_]*$/.test( inputName ) ||
+				!isPlainObject( rawDefinition ) ||
+				![ 'scalar', 'zero_based_indexes_or_all', 'rich_text_runs', 'url' ].includes( type )
+			) {
+				return;
+			}
+
+			normalized[ inputName ] = {
+				required: rawDefinition.required === true,
+				type,
+			};
+		} );
+
+		return Object.keys( normalized ).length ? normalized : null;
+	}
+
 	function normalizeEditorOperation( rawOperation ) {
 		if ( !isPlainObject( rawOperation ) ) return null;
 
@@ -358,6 +393,19 @@
 		const formats = normalizeEditorOperationStringArray( rawOperation.formats );
 		const targetModes = normalizeEditorOperationStringArray( rawOperation.targetModes );
 		const values = normalizeEditorOperationValues( rawOperation.values );
+		const inputs = normalizeEditorOperationInputs( rawOperation.inputs );
+
+		if (
+			kind === 'block_attribute_change' &&
+			(
+				!inputs ||
+				!inputs.value ||
+				inputs.value.required !== true ||
+				inputs.value.type !== 'scalar'
+			)
+		) {
+			return null;
+		}
 
 		if ( attribute ) {
 			normalized.attribute = attribute;
@@ -376,6 +424,12 @@
 		}
 		if ( values ) {
 			normalized.values = values;
+		}
+		if ( inputs ) {
+			normalized.inputs = inputs;
+		}
+		if ( rawOperation.publicOperation === true ) {
+			normalized.publicOperation = true;
 		}
 		if ( Object.prototype.hasOwnProperty.call( rawOperation, 'unsetValue' ) ) {
 			normalized.unsetValue = rawOperation.unsetValue;
@@ -1603,6 +1657,7 @@
 					selector,
 					element: matchedElement,
 					attribute: contentBinding.path,
+					bindingSource: contentBinding.source,
 					type: 'text',
 					default: !!componentDefinition.default && !defaultAssigned,
 					isGhost: isGhostElement( matchedElement ),
@@ -1637,6 +1692,7 @@
 					type: 'text',
 					uiEditable: componentDefinition.uiEditable !== false,
 					bindings: resolvedBindings,
+					bindingSource: contentBinding.source,
 					schemaSelector: componentDefinition.selector,
 					missingUI: componentDefinition.missingUI || null,
 					required: componentDefinition.required === true,

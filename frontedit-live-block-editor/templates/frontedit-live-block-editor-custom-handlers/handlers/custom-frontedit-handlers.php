@@ -163,7 +163,7 @@ class MWPSFE_Example_Handler_Core_Paragraph extends MWPSFE_Abstract_Text_Edit_Ha
 			),
 			'textAlignment' => array(
 				'attribute'  => 'style.typography.textAlign',
-				'values'     => array( 'left', 'center', 'right', 'justify' ),
+				'values'     => array( 'left', 'center', 'right' ),
 				'unsetValue' => 'left',
 			),
 		);

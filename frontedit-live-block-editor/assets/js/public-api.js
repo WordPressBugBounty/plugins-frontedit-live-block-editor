@@ -7,12 +7,11 @@
  *     applyActiveMediaSelection, getPageContext, getRestContext, setRestNonce,
  *     getElementByUuid, getUuidForElement, getBlockSnapshot, getEditableBlocks,
  *     resolveRuntime,
- *     resolveEditingRuntime, getEditableComponents, getListStructure,
+ *     resolveEditingRuntime, getEditOperationContract, getEditableComponents,
+ *     getListStructure, getListOperationContract,
  *     getDefaultComponent, getMediaDescriptor, getMediaContext,
- *     isMediaEditable, openEditor, closeEditor, applyTextComponentOperations,
- *     applyMediaComponentOperations,
- *     applyBlockAttributeOperations,
- *     applyListOperations, applyStructuredEdit, stageBlockState,
+ *     isMediaEditable, openEditor, closeEditor, preflightOperations,
+ *     applyOperations, preflightListOperations, applyListOperations, stageBlockState,
  *     clearStagedBlockState, refreshBlock, getDirtyBlocks, hasDirtyBlocks,
  *     isBatchSessionActive, resetDirtyBlocks
  *   }
@@ -353,6 +352,62 @@
 			schema: {
 				handlerId: String(bundle.schema?.handlerId || bundle.handler.id || '').trim(),
 			},
+		};
+	}
+
+	/**
+	 * Project one resolved runtime component into FrontEdit's immutable public
+	 * operation contract. The result contains only schema-declared fields and
+	 * never exposes a DOM element, route, save control, or private runtime state.
+	 *
+	 * @param {Object|null} component Resolved runtime component detail.
+	 * @returns {Object[]} Public operations for this runtime component.
+	 */
+	function buildEditOperationContractComponent(component) {
+		const id = String(component?.id || '').trim();
+		const operationExecutor = SFE.SchemaOperationExecutor || null;
+		const definitions = id && typeof operationExecutor?.getPublicComponentOperations === 'function'
+			? operationExecutor.getPublicComponentOperations(component)
+			: [];
+		const operations = Array.isArray(definitions)
+			? definitions
+				.filter(definition => definition && typeof definition === 'object' && !Array.isArray(definition))
+				.map(definition => ({
+					...bridge.clonePlainData(definition),
+					componentId: id,
+				}))
+			: [];
+
+		return id ? operations : [];
+	}
+
+	/**
+	 * Build the authoritative, schema-derived public operation contract for one
+	 * live block. This is an inspection API only: FrontEdit continues to
+	 * validate and apply all operations through its regular public APIs.
+	 *
+	 * @param {Object|null} bundle Resolved FrontEdit runtime bundle.
+	 * @returns {Object|null} Public AI operation contract.
+	 */
+	function buildEditOperationContract(bundle) {
+		const resolved = buildResolvedEditingRuntimeSnapshot(bundle);
+		if (!resolved || !resolved.runtime) {
+			return null;
+		}
+
+		const operations = (Array.isArray(resolved.runtime.editableComponents)
+			? resolved.runtime.editableComponents
+			: [])
+			.map(buildEditOperationContractComponent)
+			.flat();
+		if (!operations.length) {
+			return null;
+		}
+
+		return {
+			contractVersion: 1,
+			uuid: resolved.uuid,
+			operations,
 		};
 	}
 
@@ -1109,159 +1164,6 @@
 	}
 
 	/**
-	 * Apply one or more schema-declared block-attribute operations to the active editor.
-	 *
-	 * @param {Object} options Block-attribute operation options.
-	 * @returns {Object|null} Result summary and current tracked attribute changes.
-	 */
-	function applyBlockAttributeOperationsToActiveEditor(options = {}) {
-		const editorState = resolveActiveEditorState(options);
-		const editorHost = resolveActiveEditorHost(editorState);
-		const operations = Array.isArray(options.operations)
-			? options.operations.filter(operation => (
-				operation &&
-				typeof operation === 'object' &&
-				!Array.isArray(operation) &&
-				typeof operation.id === 'string' &&
-				operation.id.trim() &&
-				Object.prototype.hasOwnProperty.call(operation, 'value')
-			))
-			: [];
-		const operationExecutor = SFE.SchemaOperationExecutor || null;
-
-		if (
-			!editorState ||
-			!editorHost ||
-			!operations.length ||
-			!operationExecutor ||
-			typeof operationExecutor.executeBlockAttributeOperations !== 'function'
-		) {
-			return null;
-		}
-
-		const executionResult = operationExecutor.executeBlockAttributeOperations({
-			editorHost,
-			operations,
-			saveHistory: true,
-			afterSync: function() {
-				syncActiveEditorState(editorState);
-			},
-		});
-		if (!executionResult) {
-			return null;
-		}
-
-		return {
-			uuid: String(editorState.uuid || '').trim(),
-			operationsApplied: executionResult.operationsApplied,
-			attributeChanges: bridge.clonePlainData(executionResult.attributeChanges || {}),
-		};
-	}
-
-	/**
-	 * Apply one or more component-content replacement operations to the active editor.
-	 *
-	 * The shared executor owns rich-text run rendering and link normalization so
-	 * external callers can target component surfaces without reimplementing FrontEdit's
-	 * browser mutation semantics.
-	 *
-	 * @param {Object} options Component-operation options.
-	 * @returns {Object|null} Result summary and updated component IDs.
-	 */
-	function applyTextComponentOperationsToActiveEditor(options = {}) {
-		const editorState = resolveActiveEditorState(options);
-		const editorHost = resolveActiveEditorHost(editorState);
-		const operations = Array.isArray(options.operations)
-			? options.operations.filter(operation => operation && typeof operation === 'object' && !Array.isArray(operation))
-			: [];
-		const operationExecutor = SFE.SchemaOperationExecutor || null;
-
-		if (
-			!editorState ||
-			!editorHost ||
-			!operations.length ||
-			!operationExecutor ||
-			typeof operationExecutor.executeComponentOperations !== 'function'
-		) {
-			return null;
-		}
-
-		const executionResult = operationExecutor.executeComponentOperations({
-			editorState,
-			editorHost,
-			operations,
-			saveHistory: true,
-			afterSync: function() {
-				syncActiveEditorState(editorState);
-			},
-		});
-		if (!executionResult) {
-			return null;
-		}
-
-		return {
-			uuid: String(editorState.uuid || '').trim(),
-			updatedComponentIds: Array.isArray(executionResult.updatedComponentIds)
-				? executionResult.updatedComponentIds.slice()
-				: [],
-			operationsApplied: Array.isArray(executionResult.operationsApplied)
-				? executionResult.operationsApplied.slice()
-				: [],
-		};
-	}
-
-	/**
-	 * Apply one or more schema-backed media replacements to the active editor.
-	 *
-	 * This targets the currently active media-session host so external callers
-	 * can replace schema media components without bypassing FrontEdit's own preview and
-	 * resolved-media update pipeline.
-	 *
-	 * @param {Object} options Media-operation options.
-	 * @returns {Object|null} Result summary and updated component IDs.
-	 */
-	function applyMediaComponentOperationsToActiveEditor(options = {}) {
-		const editorState = resolveActiveEditorState(options);
-		const editorHost = resolveActiveEditorHost(editorState);
-		const operations = Array.isArray(options.operations)
-			? options.operations.filter(operation => operation && typeof operation === 'object' && !Array.isArray(operation))
-			: [];
-		const operationExecutor = SFE.SchemaOperationExecutor || null;
-
-		if (
-			!editorState ||
-			!editorHost ||
-			!operations.length ||
-			!operationExecutor ||
-			typeof operationExecutor.executeMediaOperations !== 'function'
-		) {
-			return null;
-		}
-
-		const executionResult = operationExecutor.executeMediaOperations({
-			editorState,
-			editorHost,
-			operations,
-			afterSync: function() {
-				syncActiveEditorState(editorState);
-			},
-		});
-		if (!executionResult) {
-			return null;
-		}
-
-		return {
-			uuid: String(editorState.uuid || '').trim(),
-			updatedComponentIds: Array.isArray(executionResult.updatedComponentIds)
-				? executionResult.updatedComponentIds.slice()
-				: [],
-			operationsApplied: Array.isArray(executionResult.operationsApplied)
-				? executionResult.operationsApplied.slice()
-				: [],
-		};
-	}
-
-	/**
 	 * Apply one or more high-level public list operations to the currently open
 	 * list editor.
 	 *
@@ -1291,6 +1193,14 @@
 			return null;
 		}
 
+		const preflight = preflightListOperationsForActiveEditor({
+			uuid: String(editorState.uuid || '').trim(),
+			operations,
+		});
+		if (!preflight || preflight.valid !== true) {
+			return null;
+		}
+
 		const executionResult = operationExecutor.executeListOperations({
 			tracker: editorState.listTracker,
 			editorHost,
@@ -1313,101 +1223,141 @@
 	}
 
 	/**
-	 * Apply one normalized structured edit payload to the active schema editor.
+	 * Validate public UUID-oriented list operations without changing the editor.
 	 *
-	 * This keeps non-list staged edits inside the same public runtime contract as
-	 * list operations: open the editor first, then let FrontEdit own the mutation and
-	 * history bookkeeping.
-	 *
-	 * @param {Object} options Structured-edit options.
-	 * @returns {Object|null} Result summary for the applied edit.
+	 * @param {Object} options List-operation preflight options.
+	 * @returns {Object|null} Side-effect-free FrontEdit validation summary.
 	 */
-	function applyStructuredEditToActiveEditor(options = {}) {
-		const editorState = resolveActiveEditorState(options);
+	function preflightListOperationsForActiveEditor(options = {}) {
+		const editorState = resolveActiveListEditorState(options);
 		const editorHost = resolveActiveEditorHost(editorState);
-		const componentUpdates = Array.isArray(options.componentUpdates)
-			? options.componentUpdates.filter(operation => operation && typeof operation === 'object' && !Array.isArray(operation))
-			: [];
-		const attributeOperations = Array.isArray(options.attributeOperations)
-			? options.attributeOperations.filter(operation => (
-				operation &&
-				typeof operation === 'object' &&
-				!Array.isArray(operation) &&
-				typeof operation.id === 'string' &&
-				operation.id.trim() &&
-				Object.prototype.hasOwnProperty.call(operation, 'value')
-			))
-			: [];
+		const operations = Array.isArray(options.operations)
+			? options.operations
+			: (options.operation ? [ options.operation ] : []);
 		const operationExecutor = SFE.SchemaOperationExecutor || null;
 
-		if (!editorState || !editorHost || (!componentUpdates.length && !attributeOperations.length)) {
+		if (
+			!editorState ||
+			!editorHost ||
+			!operations.length ||
+			!operationExecutor ||
+			typeof operationExecutor.preflightListOperations !== 'function'
+		) {
 			return null;
 		}
 
-		let attributeResult = null;
-		let componentResult = null;
+		const result = operationExecutor.preflightListOperations({
+			tracker: editorState.listTracker,
+			editorHost,
+			operations,
+			targetResolutionMode: 'api_uuid',
+		});
 
-		if (
-			componentUpdates.length
-			&& operationExecutor
-			&& typeof operationExecutor.executeComponentOperations === 'function'
-		) {
-			componentResult = operationExecutor.executeComponentOperations({
-				editorState,
-				editorHost,
-				operations: componentUpdates,
-				saveHistory: false,
-			});
+		return result && typeof result === 'object'
+			? {
+				uuid: String(editorState.uuid || '').trim(),
+				...result,
+			}
+			: null;
+	}
+
+	/**
+	 * Validate one public operation batch without opening an editor or changing
+	 * the page. ABE and other integrations must call this only after explicitly
+	 * opening the target editor through `openEditor(...)`.
+	 *
+	 * @param {Object} options Public operation options.
+	 * @returns {Object|null} Side-effect-free validation result.
+	 */
+	function preflightOperationsForActiveEditor(options = {}) {
+		const editorState = resolveActiveEditorState(options);
+		const editorHost = resolveActiveEditorHost(editorState);
+		const operationExecutor = SFE.SchemaOperationExecutor || null;
+		if (!editorState || !editorHost || typeof operationExecutor?.preflightPublicOperations !== 'function') {
+			return null;
+		}
+		const result = operationExecutor.preflightPublicOperations({
+			editorState,
+			editorHost,
+			operations: Array.isArray(options.operations) ? options.operations : [],
+		});
+
+		return {
+			uuid: String(editorState.uuid || '').trim(),
+			valid: result?.valid === true,
+			validatedOperationIds: Array.isArray(result?.validatedOperationIds)
+				? result.validatedOperationIds.slice()
+				: [],
+			errors: Array.isArray(result?.errors) ? result.errors.slice() : [],
+		};
+	}
+
+	/**
+	 * Stage one validated batch of public operations through FrontEdit's shared
+	 * schema executor. This does not save the block: FrontEdit retains ownership
+	 * of preview, history, save, cancel, dirty-state, and lifecycle behavior.
+	 *
+	 * @param {Object} options Public operation options.
+	 * @returns {{uuid:string, operationsApplied:string[], appliedOperationCount:number}|null} Staging result.
+	 */
+	function applyOperationsToActiveEditor(options = {}) {
+		const editorState = resolveActiveEditorState(options);
+		const editorHost = resolveActiveEditorHost(editorState);
+		const operationExecutor = SFE.SchemaOperationExecutor || null;
+		if (!editorState || !editorHost || typeof operationExecutor?.executePublicOperations !== 'function') {
+			return null;
 		}
 
-		if (
-			attributeOperations.length &&
-			operationExecutor &&
-			typeof operationExecutor.executeBlockAttributeOperations === 'function'
-		) {
-			attributeResult = operationExecutor.executeBlockAttributeOperations({
-				editorHost,
-				operations: attributeOperations,
-				saveHistory: false,
-			});
-		}
-
-		const didApplyAttributes = !!(
-			attributeResult &&
-			Array.isArray(attributeResult.operationsApplied) &&
-			attributeResult.operationsApplied.length
-		);
-		const didApplyComponents = !!(
-			componentResult &&
-			Array.isArray(componentResult.updatedComponentIds) &&
-			componentResult.updatedComponentIds.length
-		);
-		if (!didApplyComponents && !didApplyAttributes) {
+		const result = operationExecutor.executePublicOperations({
+			editorState,
+			editorHost,
+			operations: Array.isArray(options.operations) ? options.operations : [],
+		});
+		const appliedOperationIds = Array.isArray(result?.operationsApplied)
+			? result.operationsApplied
+			: [];
+		const appliedOperationCount = Number(result?.appliedOperationCount);
+		if (!appliedOperationIds.length || !Number.isInteger(appliedOperationCount) || appliedOperationCount <= 0) {
 			return null;
 		}
 
 		syncActiveEditorState(editorState);
-
 		const historyApi = getSessionHistoryApiForHost(editorHost);
 		if (typeof historyApi?.saveToHistory === 'function') {
 			historyApi.saveToHistory();
 		}
-
 		if (typeof editorHost.updateToolbarState === 'function') {
 			editorHost.updateToolbarState();
 		}
 
 		return {
 			uuid: String(editorState.uuid || '').trim(),
-			updatedComponentIds: Array.isArray(componentResult?.updatedComponentIds)
-				? componentResult.updatedComponentIds
-				: [],
-			operationsApplied: [
-				...(Array.isArray(componentResult?.operationsApplied) ? componentResult.operationsApplied : []),
-				...(Array.isArray(attributeResult?.operationsApplied) ? attributeResult.operationsApplied : []),
-			],
-			attributeChanges: bridge.clonePlainData(editorHost.attributeChanges || {}),
+			operationsApplied: Array.from(new Set(appliedOperationIds)),
+			appliedOperationCount,
 		};
+	}
+
+	/**
+	 * Resolve the public runtime target for one list root.
+	 *
+	 * List item identities are generated and scoped by the browser runtime, so
+	 * every public list inspection method starts from the live root element.
+	 *
+	 * @param {Object} options Lookup options.
+	 * @returns {{uuid:string,element:Element}|null} Resolved list target.
+	 */
+	function resolveRuntimeListTarget(options = {}) {
+		const uuid = String(options.uuid || '').trim() || getUuidForElement(options.element);
+		const element = options.element instanceof Element ? options.element : getElementByUuid(uuid);
+		if (
+			!uuid ||
+			!(element instanceof Element) ||
+			(element.tagName !== 'UL' && element.tagName !== 'OL')
+		) {
+			return null;
+		}
+
+		return { uuid, element };
 	}
 
 	/**
@@ -1420,24 +1370,48 @@
 	 * @returns {Object|null} List structure snapshot.
 	 */
 	function getListStructure(options = {}) {
-		const uuid = String(options.uuid || '').trim() || getUuidForElement(options.element);
-		const element = options.element instanceof Element ? options.element : getElementByUuid(uuid);
+		const target = resolveRuntimeListTarget(options);
 		const listTracker = SFE.ListBlockTracker || null;
-		if (
-			!uuid ||
-			!(element instanceof Element) ||
-			!listTracker ||
-			(element.tagName !== 'UL' && element.tagName !== 'OL')
-		) {
+		if (!target || !listTracker) {
 			return null;
 		}
 
-		const tracker = element._mwpListTracker
-			|| listTracker.init(element, resolveBlockState(uuid) || {});
+		const tracker = target.element._mwpListTracker
+			|| listTracker.init(target.element, resolveBlockState(target.uuid) || {});
 
 		return tracker && typeof listTracker.getStructure === 'function'
 			? listTracker.getStructure(tracker)
 			: null;
+	}
+
+	/**
+	 * Return FrontEdit's immutable public operation contract for one live list.
+	 *
+	 * The list executor owns this descriptor because public list item UUIDs are
+	 * browser-session tokens, not handler-schema component IDs. Integrations must
+	 * derive proposal shape and validation from this method instead of keeping a
+	 * parallel catalog of list operation kinds or fields.
+	 *
+	 * @param {Object} options Lookup options.
+	 * @returns {{contractVersion:number,uuid:string,operations:Object[]}|null} Public list operation contract.
+	 */
+	function getListOperationContract(options = {}) {
+		const target = resolveRuntimeListTarget(options);
+		const operationExecutor = SFE.SchemaOperationExecutor || null;
+		if (!target || typeof operationExecutor?.getPublicListOperationContract !== 'function') {
+			return null;
+		}
+
+		const operations = operationExecutor.getPublicListOperationContract();
+		if (!Array.isArray(operations) || !operations.length) {
+			return null;
+		}
+
+		return {
+			contractVersion: 1,
+			uuid: target.uuid,
+			operations: bridge.clonePlainData(operations),
+		};
 	}
 
 	/**
@@ -1596,9 +1570,10 @@
 				runtimeInspection: true,
 				editableBlockDiscovery: true,
 				editingRuntimeResolution: true,
-				textComponentOperations: true,
-				structuredEditOperations: true,
-				mediaComponentOperations: true,
+				publicOperationContracts: true,
+				operations: true,
+				operationPreflight: true,
+				listOperationContracts: true,
 				mediaInspection: true,
 				mediaSessionControl: true,
 				explicitStaging: true,
@@ -1665,11 +1640,15 @@
 	PublicApi.resolveEditingRuntime = function resolveEditingRuntime(options = {}) {
 		return buildResolvedEditingRuntimeSnapshot(resolveRuntimeBundle(options));
 	};
+	PublicApi.getEditOperationContract = function getEditOperationContract(options = {}) {
+		return buildEditOperationContract(resolveRuntimeBundle(options));
+	};
 	PublicApi.getEditableComponents = function getEditableComponents(options = {}) {
 		const runtime = buildResolvedRuntimeSnapshot(resolveRuntimeBundle(options));
 		return runtime ? runtime.components : [];
 	};
 	PublicApi.getListStructure = getListStructure;
+	PublicApi.getListOperationContract = getListOperationContract;
 	PublicApi.getDefaultComponent = function getDefaultComponent(options = {}) {
 		const components = PublicApi.getEditableComponents(options);
 		return components.find(component => component.default) || components[0] || null;
@@ -1705,11 +1684,10 @@
 	};
 	PublicApi.openEditor = openEditor;
 	PublicApi.closeEditor = closeEditor;
-	PublicApi.applyTextComponentOperations = applyTextComponentOperationsToActiveEditor;
-	PublicApi.applyMediaComponentOperations = applyMediaComponentOperationsToActiveEditor;
-	PublicApi.applyBlockAttributeOperations = applyBlockAttributeOperationsToActiveEditor;
+	PublicApi.preflightOperations = preflightOperationsForActiveEditor;
+	PublicApi.applyOperations = applyOperationsToActiveEditor;
+	PublicApi.preflightListOperations = preflightListOperationsForActiveEditor;
 	PublicApi.applyListOperations = applyListOperationsToActiveEditor;
-	PublicApi.applyStructuredEdit = applyStructuredEditToActiveEditor;
 	PublicApi.stageBlockState = function stageBlockState(stage) {
 		const uuid = String(stage && stage.uuid ? stage.uuid : '').trim();
 		if (!uuid || !stage || typeof stage !== 'object' || !stage.blockState || typeof stage.blockState !== 'object') {

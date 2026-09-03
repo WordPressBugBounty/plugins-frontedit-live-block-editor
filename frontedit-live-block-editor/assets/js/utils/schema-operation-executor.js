@@ -9,12 +9,17 @@
  * Exposes: SFE.SchemaOperationExecutor
  *   {
  *     executeComponentOperation, executeComponentOperations,
- *     executeMediaOperation, executeMediaOperations,
+ *     preflightComponentOperations,
+ *     executeMediaOperation, executeMediaOperations, preflightMediaOperations,
  *     executeBlockAttributeOperation, executeBlockAttributeOperations,
- *     executeListOperations, executeCurrentListTypeChange, getTrackerForEditor,
+ *     preflightBlockAttributeOperations, preflightPublicOperations,
+ *     executePublicOperations, executeListOperations,
+ *     getPublicComponentOperations, getPublicListOperationContract,
+ *     preflightListOperations, executeCurrentListTypeChange, getTrackerForEditor,
  *     getCurrentListElement, getListPathForElement, syncEditorRoot,
  *     isUnsetBlockAttributeValue, normalizeBlockAttributeTrackedValue,
  *     getTextAlignmentCapability, getNormalizedTextAlignmentCapability,
+ *     isVirtualBindingBackedTextAlignmentCapability,
  *     isTextAlignmentOperation
  *   }
  */
@@ -25,7 +30,6 @@
 	window.MWP.SFE = window.MWP.SFE || {};
 
 	const SFE = window.MWP.SFE;
-
 	/**
 	 * Return whether one candidate element is a list root.
 	 *
@@ -327,6 +331,111 @@
 
 			map[componentId] = component;
 			return map;
+		}, {});
+	}
+
+	/**
+	 * Project one component's handler-owned operations into FrontEdit's public
+	 * operation grammar. Handlers opt into this API surface explicitly through
+	 * `publicOperation: true`; FrontEdit does not maintain a second allowlist of
+	 * operation kinds or synthesize operations for integrations.
+	 *
+	 * @param   {Object|null} component Resolved runtime component.
+	 * @returns {Object[]}               Public-safe operation definitions.
+	 */
+	function getPublicComponentOperations(component) {
+		const editorOptions = component?.editor && typeof component.editor === 'object'
+			? component.editor
+			: {};
+		const runFormatTokens = getPublicRunFormatTokens(editorOptions);
+		const schemaOperations = Array.isArray(editorOptions.operations)
+			? editorOptions.operations
+			: [];
+		const operations = schemaOperations.reduce((publicOperations, operation) => {
+			const id = String(operation?.id || '').trim();
+			if (!id || operation?.publicOperation !== true) {
+				return publicOperations;
+			}
+
+			const inputs = operation?.inputs && typeof operation.inputs === 'object' && !Array.isArray(operation.inputs)
+				? Object.entries(operation.inputs).reduce((definitions, [name, definition]) => {
+					const type = String(definition?.type || '').trim();
+					if (!name || !type) {
+						return definitions;
+					}
+					definitions[name] = {
+						required: definition?.required === true,
+						type,
+					};
+					return definitions;
+				}, {})
+				: {};
+			if (!Object.keys(inputs).length) {
+				return publicOperations;
+			}
+			const publicOperation = { id, inputs };
+			if (Array.isArray(operation?.values) && operation.values.length) {
+				publicOperation.values = operation.values.slice();
+			}
+			if (Object.values(inputs).some(input => input.type === 'rich_text_runs')) {
+				publicOperation.allowedRunFormats = runFormatTokens.slice();
+				const requiredRunFormatAttributes = getPublicRunFormatAttributeRequirements(editorOptions);
+				if (Object.keys(requiredRunFormatAttributes).length) {
+					publicOperation.requiredRunFormatAttributes = requiredRunFormatAttributes;
+				}
+			}
+			publicOperations.push(publicOperation);
+			return publicOperations;
+		}, []);
+		return operations;
+	}
+
+	/**
+	 * Return public inline-format tokens declared by one component handler.
+	 *
+	 * The public contract exposes stable tokens such as `bold`. Required
+	 * attributes are projected separately only when an operation needs that data
+	 * to produce a valid rich-text format.
+	 *
+	 * @param   {Object} editorOptions Handler-derived component editor options.
+	 * @returns {string[]}             Supported public rich-text format tokens.
+	 */
+	function getPublicRunFormatTokens(editorOptions) {
+		const capabilities = editorOptions?.inlineFormatCapabilities;
+		if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+			return [];
+		}
+
+		return Array.from(new Set(
+			Object.keys(capabilities)
+				.map(token => String(token || '').trim())
+				.filter(Boolean)
+		));
+	}
+
+	/**
+	 * Project handler-declared attributes that a public rich-text format requires.
+	 *
+	 * This is intentionally limited to the minimum data needed to form a valid
+	 * public run. Rendering tags, optional attributes, bindings, and other
+	 * executor details remain private to FrontEdit.
+	 *
+	 * @param   {Object} editorOptions Handler-derived component editor options.
+	 * @returns {Object<string, string[]>} Required attributes keyed by format token.
+	 */
+	function getPublicRunFormatAttributeRequirements(editorOptions) {
+		const capabilities = editorOptions?.inlineFormatCapabilities;
+		if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+			return {};
+		}
+
+		return Object.entries(capabilities).reduce((requirements, [rawToken, capability]) => {
+			const token = String(rawToken || '').trim();
+			const attributes = normalizeStringArray(capability?.requiredAttributes);
+			if (token && attributes.length) {
+				requirements[token] = attributes;
+			}
+			return requirements;
 		}, {});
 	}
 
@@ -1083,6 +1192,7 @@
 		}
 
 		return {
+			...operationInput,
 			...matched,
 			component: componentId,
 			kind: String(matched.kind || '').trim() === 'link_change'
@@ -1232,6 +1342,88 @@
 			operationsApplied: results
 				.map(result => result.id || result.kind)
 				.filter(Boolean),
+		};
+	}
+
+	/**
+	 * Validate schema-backed component replacements without touching the editor.
+	 *
+	 * External integrations use this before asking the public API to stage an
+	 * untrusted proposal. The check deliberately reuses the same resolver and
+	 * normalization rules as execution, but it does not alter DOM, selection,
+	 * history, tracked attributes, or toolbar state.
+	 *
+	 * @param   {Object} options Preflight options.
+	 * @returns {{valid:boolean, validatedComponentIds:string[], errors:Object[]}} Preflight summary.
+	 */
+	function preflightComponentOperations(options = {}) {
+		const editorState = options.editorState || null;
+		const editorHost = options.editorHost || null;
+		const componentMap = getActiveEditorComponentMap(editorState);
+		const inputOperations = Array.isArray(options.operations)
+			? options.operations
+			: [ options.operation || options ];
+		const errors = [];
+		const validatedComponentIds = [];
+
+		if (!editorState || !editorHost || !Object.keys(componentMap).length || !inputOperations.length) {
+			return {
+				valid: false,
+				validatedComponentIds,
+				errors: [ { code: 'component_editor_unavailable' } ],
+			};
+		}
+
+		inputOperations.forEach((inputOperation, index) => {
+			const operationInput = inputOperation && typeof inputOperation === 'object' && !Array.isArray(inputOperation)
+				? inputOperation
+				: null;
+			const operation = operationInput ? resolveComponentOperation(editorState, operationInput) : null;
+			const componentId = String(operation?.component || '').trim();
+			const component = componentMap[componentId] || null;
+			if (!operationInput || !operation || !component?.element) {
+				errors.push({ code: 'component_operation_invalid', index });
+				return;
+			}
+
+			if (operation.kind === 'link_change') {
+				const formatToken = String(operation.format || operationInput.format || '').trim();
+				const capability = getInlineLinkCapability(component.editorOptions?.inlineFormatCapabilities || {}, formatToken);
+				const hostTagName = String(component.element?.tagName || '').trim().toLowerCase();
+				const attributes = normalizeComponentHostLinkOperationPayload(
+					operationInput,
+					capability,
+					operation,
+					component.element
+				);
+				if (capability.tag !== 'a' || hostTagName !== capability.tag || !attributes) {
+					errors.push({ code: 'component_link_operation_invalid', index, componentId });
+					return;
+				}
+			} else {
+				const bindingSource = String(operationInput.bindingSource || component.bindingSource || '').trim().toLowerCase();
+				const rawRuns = Array.isArray(operationInput.runs)
+					? operationInput.runs
+					: flattenComponentLineRuns(operationInput.lines);
+				const hasDirectTextPayload = Object.prototype.hasOwnProperty.call(operationInput, 'text');
+				const hasReplacementPayload = hasDirectTextPayload || Array.isArray(operationInput.runs) || Array.isArray(operationInput.lines);
+				if (
+					(bindingSource !== 'html' && bindingSource !== 'plaintext') ||
+					!hasReplacementPayload ||
+					(!hasDirectTextPayload && !rawRuns.length)
+				) {
+					errors.push({ code: 'component_content_operation_invalid', index, componentId });
+					return;
+				}
+			}
+
+			validatedComponentIds.push(componentId);
+		});
+
+		return {
+			valid: errors.length === 0,
+			validatedComponentIds: Array.from(new Set(validatedComponentIds)),
+			errors,
 		};
 	}
 
@@ -1388,6 +1580,428 @@
 	}
 
 	/**
+	 * Validate schema-backed component-media replacements without changing the
+	 * active media editor. This mirrors the executable media constraints so an
+	 * external integration can reject an untrusted proposal before staging it.
+	 *
+	 * @param   {Object} options Preflight options.
+	 * @returns {{valid:boolean, validatedComponentIds:string[], errors:Object[]}} Preflight summary.
+	 */
+	function preflightMediaOperations(options = {}) {
+		const editorState = options.editorState || null;
+		const editorHost = options.editorHost || null;
+		const componentMap = getActiveEditorComponentMap(editorState);
+		const inputOperations = Array.isArray(options.operations)
+			? options.operations
+			: [ options.operation || options ];
+		const validatedComponentIds = [];
+		const errors = [];
+		const activeComponentId = String(
+			editorState?.activeComponentId ||
+			editorState?.activeEditableComponent?.id ||
+			''
+		).trim();
+
+		if (
+			!editorState ||
+			!editorHost ||
+			typeof editorHost.applyMediaSelection !== 'function' ||
+			!Object.keys(componentMap).length ||
+			!inputOperations.length
+		) {
+			return {
+				valid: false,
+				validatedComponentIds,
+				errors: [ { code: 'media_editor_unavailable' } ],
+			};
+		}
+
+		inputOperations.forEach((inputOperation, index) => {
+			const operationInput = inputOperation && typeof inputOperation === 'object' && !Array.isArray(inputOperation)
+				? inputOperation
+				: null;
+			const operation = operationInput ? resolveMediaOperation(editorState, operationInput) : null;
+			const componentId = String(operation?.component || '').trim();
+			const component = componentMap[componentId] || null;
+			const payload = operationInput?.media && typeof operationInput.media === 'object'
+				? operationInput.media
+				: (operationInput?.value && typeof operationInput.value === 'object'
+					? operationInput.value
+					: operationInput);
+			const url = String(payload?.url || '').trim();
+
+			if (
+				!operationInput ||
+				!operation ||
+				!component?.element ||
+				!component?.mediaDescriptor ||
+				!url ||
+				(activeComponentId && activeComponentId !== componentId) ||
+				(!activeComponentId && editorHost.element && editorHost.element !== component.element)
+			) {
+				errors.push({ code: 'media_operation_invalid', index, componentId });
+				return;
+			}
+
+			validatedComponentIds.push(componentId);
+		});
+
+		return {
+			valid: errors.length === 0,
+			validatedComponentIds: Array.from(new Set(validatedComponentIds)),
+			errors,
+		};
+	}
+
+	/**
+	 * Normalize one public operation envelope without accepting any executor
+	 * metadata from the caller. The public API deliberately accepts only an
+	 * operation ID, component ID, and declared input values.
+	 *
+	 * @param   {Object|null} operation Candidate public operation.
+	 * @returns {Object|null}           Normalized envelope, or null.
+	 */
+	function normalizePublicOperationEnvelope(operation) {
+		if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
+			return null;
+		}
+
+		const id = String(operation.id || '').trim();
+		const componentId = String(operation.componentId || '').trim();
+		const inputs = operation.inputs && typeof operation.inputs === 'object' && !Array.isArray(operation.inputs)
+			? { ...operation.inputs }
+			: null;
+
+		return id && componentId && inputs ? { id, componentId, inputs } : null;
+	}
+
+	/**
+	 * Resolve one explicitly public schema operation for an active component.
+	 *
+	 * Public callers identify an operation by its stable handler-declared ID;
+	 * executor kinds and all mutation metadata remain private to FrontEdit.
+	 *
+	 * @param   {Object|null} editorState Active editor session state.
+	 * @param   {string}      componentId Concrete runtime component ID.
+	 * @param   {string}      operationId Handler-declared operation ID.
+	 * @returns {Object|null} Private schema operation declaration.
+	 */
+	function resolveDeclaredPublicOperation(editorState, componentId, operationId) {
+		const component = getActiveEditorComponentMap(editorState)[componentId] || null;
+		const operations = Array.isArray(component?.editorOptions?.operations)
+			? component.editorOptions.operations
+			: [];
+
+		return operations.find(candidate => (
+			candidate &&
+			candidate.publicOperation === true &&
+			String(candidate.id || '').trim() === operationId
+		)) || null;
+	}
+
+	/**
+	 * Validate one opaque public input map against the handler-declared input
+	 * shape without accepting unknown fields. Detailed component/media validation
+	 * remains in the canonical execution path after this boundary check.
+	 *
+	 * @param   {Object} rawInputs    Candidate public input map.
+	 * @param   {Object} definitions  Handler-declared input definitions.
+	 * @returns {Object|null}         Copy safe for private execution, or null.
+	 */
+	function normalizePublicOperationInputs(rawInputs, definitions) {
+		if (
+			!rawInputs ||
+			typeof rawInputs !== 'object' ||
+			Array.isArray(rawInputs) ||
+			!definitions ||
+			typeof definitions !== 'object' ||
+			Array.isArray(definitions)
+		) {
+			return null;
+		}
+
+		const definitionNames = Object.keys(definitions);
+		if (!definitionNames.length || Object.keys(rawInputs).some(name => !definitionNames.includes(name))) {
+			return null;
+		}
+
+		const normalized = {};
+		for (const name of definitionNames) {
+			const definition = definitions[name] || {};
+			const hasInput = Object.prototype.hasOwnProperty.call(rawInputs, name);
+			if (!hasInput) {
+				if (definition.required === true) {
+					return null;
+				}
+				continue;
+			}
+
+			const value = rawInputs[name];
+			const type = String(definition.type || '').trim();
+			if (type === 'rich_text_runs') {
+				if (!Array.isArray(value) || !value.length) {
+					return null;
+				}
+				normalized[name] = value;
+				continue;
+			}
+			if (type === 'url') {
+				if (typeof value !== 'string' || !value.trim()) {
+					return null;
+				}
+				normalized[name] = value;
+				continue;
+			}
+
+			const input = normalizeSchemaOperationInput(value, definition);
+			if (!input.valid) {
+				return null;
+			}
+			normalized[name] = input.value;
+		}
+
+		return normalized;
+	}
+
+	/**
+	 * Resolve one opaque public operation through the active handler schema.
+	 *
+	 * Routing remains internal to the shared executor: callers neither name an
+	 * executor nor provide attribute paths, serialization details, or operation
+	 * kinds. List workflows remain on their existing UUID-oriented list API
+	 * until their handler declarations expose this same envelope contract.
+	 *
+	 * @param   {Object|null} editorState Active editor session state.
+	 * @param   {Object|null} editorHost  Active editor host.
+	 * @param   {Object|null} operation   Normalized public operation.
+	 * @returns {Object|null}             Private resolved operation descriptor.
+	 */
+	function resolvePublicOperation(editorState, editorHost, operation) {
+		if (!editorState || !editorHost || !operation) {
+			return null;
+		}
+
+		const declaredOperation = resolveDeclaredPublicOperation(
+			editorState,
+			operation.componentId,
+			operation.id
+		);
+		if (!declaredOperation) {
+			return null;
+		}
+
+		const inputs = normalizePublicOperationInputs(operation.inputs, declaredOperation.inputs);
+		if (!inputs) {
+			return null;
+		}
+
+		const executableOperation = {
+			id: operation.id,
+			componentId: operation.componentId,
+			...inputs,
+		};
+		const kind = String(declaredOperation.kind || '').trim();
+		if (
+			kind === 'text_rewrite' ||
+			kind === 'replace_component_content' ||
+			kind === 'link_change'
+		) {
+			if (!resolveComponentOperation(editorState, executableOperation)) {
+				return null;
+			}
+			return {
+				executor: 'component',
+				operation: executableOperation,
+			};
+		}
+
+		if (kind === 'block_attribute_change' && resolveBlockAttributeOperation(editorHost, executableOperation)) {
+			return {
+				executor: 'block_attribute',
+				operation: executableOperation,
+			};
+		}
+
+		if (kind === 'replace_component_media') {
+			const mediaOperation = {
+				...executableOperation,
+				kind: 'replace_component_media',
+			};
+			if (resolveMediaOperation(editorState, mediaOperation)) {
+				return {
+					executor: 'media',
+					operation: mediaOperation,
+				};
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Build and validate the private execution plan for public operation
+	 * envelopes. Every named operation is resolved against the active handler
+	 * before it can reach a mutation path.
+	 *
+	 * @param   {Object} options Executor options.
+	 * @returns {Object}         Private plan and public-safe validation summary.
+	 */
+	function buildPublicOperationPlan(options = {}) {
+		const editorState = options.editorState || null;
+		const editorHost = options.editorHost || null;
+		const sourceOperations = Array.isArray(options.operations) ? options.operations : [];
+		const normalizedOperations = sourceOperations.map(normalizePublicOperationEnvelope);
+		const plan = {
+			editorState,
+			editorHost,
+			componentOperations: [],
+			blockAttributeOperations: [],
+			mediaOperations: [],
+			validatedOperationIds: [],
+			errors: [],
+		};
+
+		if (!editorState || !editorHost || !normalizedOperations.length) {
+			plan.errors.push({ code: 'operation_editor_unavailable' });
+			return plan;
+		}
+
+		normalizedOperations.forEach((operation, index) => {
+			const resolved = resolvePublicOperation(editorState, editorHost, operation);
+			if (!resolved) {
+				plan.errors.push({
+					code: 'operation_not_supported',
+					index,
+					id: String(operation?.id || '').trim(),
+					componentId: String(operation?.componentId || '').trim(),
+				});
+				return;
+			}
+
+			if (resolved.executor === 'component') {
+				plan.componentOperations.push(resolved.operation);
+			} else if (resolved.executor === 'block_attribute') {
+				plan.blockAttributeOperations.push(resolved.operation);
+			} else if (resolved.executor === 'media') {
+				plan.mediaOperations.push(resolved.operation);
+			}
+			plan.validatedOperationIds.push(String(operation.id || '').trim());
+		});
+
+		const validationGroups = [
+			{
+				operations: plan.componentOperations,
+				preflight: () => preflightComponentOperations({
+					editorState,
+					editorHost,
+					operations: plan.componentOperations,
+				}),
+			},
+			{
+				operations: plan.blockAttributeOperations,
+				preflight: () => preflightBlockAttributeOperations({
+					editorHost,
+					operations: plan.blockAttributeOperations,
+				}),
+			},
+			{
+				operations: plan.mediaOperations,
+				preflight: () => preflightMediaOperations({
+					editorState,
+					editorHost,
+					operations: plan.mediaOperations,
+				}),
+			},
+		];
+
+		validationGroups.forEach(group => {
+			if (!group.operations.length) {
+				return;
+			}
+			const result = group.preflight();
+			if (result?.valid === true) {
+				return;
+			}
+			group.operations.forEach(operation => {
+				plan.errors.push({
+					code: 'operation_invalid',
+					id: String(operation.id || '').trim(),
+					componentId: String(operation.componentId || '').trim(),
+				});
+			});
+		});
+
+		return plan;
+	}
+
+	/**
+	 * Validate opaque public operation envelopes without modifying the editor.
+	 *
+	 * @param   {Object} options Executor options.
+	 * @returns {{valid:boolean, validatedOperationIds:string[], errors:Object[]}} Validation summary.
+	 */
+	function preflightPublicOperations(options = {}) {
+		const plan = buildPublicOperationPlan(options);
+
+		return {
+			valid: plan.errors.length === 0 && plan.validatedOperationIds.length > 0,
+			validatedOperationIds: Array.from(new Set(plan.validatedOperationIds)),
+			errors: plan.errors,
+		};
+	}
+
+	/**
+	 * Execute a fully schema-resolved public operation batch without creating a
+	 * history entry. The public API performs its normal single history commit
+	 * after this method stages the changes.
+	 *
+	 * @param   {Object} options Executor options.
+	 * @returns {{operationsApplied:string[], appliedOperationCount:number}|null} Applied-operation summary.
+	 */
+	function executePublicOperations(options = {}) {
+		const plan = buildPublicOperationPlan(options);
+		if (plan.errors.length || !plan.validatedOperationIds.length) {
+			return null;
+		}
+
+		const results = [];
+		if (plan.componentOperations.length) {
+			results.push(executeComponentOperations({
+				editorState: plan.editorState,
+				editorHost: plan.editorHost,
+				operations: plan.componentOperations,
+				saveHistory: false,
+			}));
+		}
+		if (plan.blockAttributeOperations.length) {
+			results.push(executeBlockAttributeOperations({
+				editorHost: plan.editorHost,
+				operations: plan.blockAttributeOperations,
+				saveHistory: false,
+			}));
+		}
+		if (plan.mediaOperations.length) {
+			results.push(executeMediaOperations({
+				editorState: plan.editorState,
+				editorHost: plan.editorHost,
+				operations: plan.mediaOperations,
+			}));
+		}
+
+		const operationsApplied = results.reduce((applied, result) => (
+			applied.concat(Array.isArray(result?.operationsApplied) ? result.operationsApplied : [])
+		), []);
+		if (operationsApplied.length !== plan.validatedOperationIds.length) {
+			return null;
+		}
+
+		return {
+			operationsApplied: Array.from(new Set(operationsApplied)),
+			appliedOperationCount: operationsApplied.length,
+		};
+	}
+
+	/**
 	 * Normalize one primitive list-operation kind to the canonical
 	 * tracker/editor operation kind.
 	 *
@@ -1422,20 +2036,92 @@
 	 */
 	function normalizePublicApiListOperationKind(kindRaw) {
 		const kind = String(kindRaw || '').trim().toLowerCase();
-		const supportedKinds = new Set([
-			'update_list_item_text',
-			'insert_before',
-			'insert_after',
-			'insert_child',
-			'remove_list_item',
-			'move_before',
-			'move_after',
-			'indent_list_item',
-			'outdent_list_item',
-			'toggle_list_type',
-		]);
+		return getPublicListOperationContract().some(operation => operation.kind === kind) ? kind : '';
+	}
 
-		return supportedKinds.has(kind) ? kind : '';
+	/**
+	 * Return FrontEdit's canonical public list-operation descriptor set.
+	 *
+	 * Lists retain a UUID-oriented public API because their item identities are
+	 * browser-session values rather than handler-schema component IDs. This
+	 * descriptor is the single FrontEdit-owned source for that public vocabulary,
+	 * exact input fields, and input semantics. Consumers must use the browser
+	 * PublicApi projection rather than recreating it in a plugin or prompt.
+	 *
+	 * @returns {Object[]} Immutable-by-convention public operation descriptors.
+	 */
+	function getPublicListOperationContract() {
+		return [
+			{
+				kind: 'update_list_item_text',
+				inputs: {
+					itemUuid: { required: true, type: 'existing_list_item_uuid' },
+					contentHtml: { required: true, type: 'direct_list_item_html' },
+				},
+			},
+			{
+				kind: 'insert_before',
+				inputs: {
+					newItemUuid: { required: true, type: 'new_list_item_uuid' },
+					targetItemUuid: { required: true, type: 'existing_list_item_uuid' },
+					contentHtml: { required: true, type: 'direct_list_item_html' },
+				},
+			},
+			{
+				kind: 'insert_after',
+				inputs: {
+					newItemUuid: { required: true, type: 'new_list_item_uuid' },
+					targetItemUuid: { required: true, type: 'existing_list_item_uuid' },
+					contentHtml: { required: true, type: 'direct_list_item_html' },
+				},
+			},
+			{
+				kind: 'insert_child',
+				inputs: {
+					newItemUuid: { required: true, type: 'new_list_item_uuid' },
+					targetItemUuid: { required: true, type: 'existing_list_item_uuid' },
+					contentHtml: { required: true, type: 'direct_list_item_html' },
+				},
+			},
+			{
+				kind: 'remove_list_item',
+				inputs: {
+					itemUuid: { required: true, type: 'existing_list_item_uuid' },
+				},
+			},
+			{
+				kind: 'move_before',
+				inputs: {
+					itemUuid: { required: true, type: 'existing_list_item_uuid' },
+					targetItemUuid: { required: true, type: 'existing_list_item_uuid' },
+				},
+			},
+			{
+				kind: 'move_after',
+				inputs: {
+					itemUuid: { required: true, type: 'existing_list_item_uuid' },
+					targetItemUuid: { required: true, type: 'existing_list_item_uuid' },
+				},
+			},
+			{
+				kind: 'indent_list_item',
+				inputs: {
+					itemUuid: { required: true, type: 'existing_list_item_uuid' },
+				},
+			},
+			{
+				kind: 'outdent_list_item',
+				inputs: {
+					itemUuid: { required: true, type: 'existing_list_item_uuid' },
+				},
+			},
+			{
+				kind: 'toggle_list_type',
+				inputs: {
+					itemUuid: { required: true, type: 'existing_list_item_uuid' },
+				},
+			},
+		];
 	}
 
 	/**
@@ -1591,31 +2277,16 @@
 	 * @returns {boolean}               True when no unsupported keys are present.
 	 */
 	function hasOnlySupportedApiUuidKeys(operationInput, normalizedKind) {
+		const operationDefinition = getPublicListOperationContract()
+			.find(operation => operation.kind === normalizedKind);
+		if (!operationDefinition || !operationDefinition.inputs) {
+			return false;
+		}
+
 		const allowedKeys = new Set([
 			'kind',
-			'contentHtml',
-			'contentText',
+			...Object.keys(operationDefinition.inputs),
 		]);
-
-		if (
-			normalizedKind === 'update_list_item_text' ||
-			normalizedKind === 'remove_list_item' ||
-			normalizedKind === 'indent_list_item' ||
-			normalizedKind === 'outdent_list_item'
-		) {
-			allowedKeys.add('itemUuid');
-		} else if (normalizedKind === 'insert_before' || normalizedKind === 'insert_after') {
-			allowedKeys.add('newItemUuid');
-			allowedKeys.add('targetItemUuid');
-		} else if (normalizedKind === 'insert_child') {
-			allowedKeys.add('newItemUuid');
-			allowedKeys.add('targetItemUuid');
-		} else if (normalizedKind === 'move_before' || normalizedKind === 'move_after') {
-			allowedKeys.add('itemUuid');
-			allowedKeys.add('targetItemUuid');
-		} else if (normalizedKind === 'toggle_list_type') {
-			allowedKeys.add('itemUuid');
-		}
 
 		return Object.keys(operationInput || {}).every(key => allowedKeys.has(key));
 	}
@@ -1666,41 +2337,19 @@
 	 * @returns {boolean}               True when the UUID target shape is valid.
 	 */
 	function isValidApiUuidListOperationTarget(operationInput, normalizedKind) {
-		if (!hasOnlySupportedApiUuidKeys(operationInput, normalizedKind)) {
+		const operationDefinition = getPublicListOperationContract()
+			.find(operation => operation.kind === normalizedKind);
+		if (
+			!operationDefinition ||
+			!operationDefinition.inputs ||
+			!hasOnlySupportedApiUuidKeys(operationInput, normalizedKind)
+		) {
 			return false;
 		}
 
-		const hasItemUuid = hasOwnOperationKey(operationInput, 'itemUuid');
-		const hasNewItemUuid = hasOwnOperationKey(operationInput, 'newItemUuid');
-		const hasListUuid = hasOwnOperationKey(operationInput, 'listUuid');
-		const hasTargetItemUuid = hasOwnOperationKey(operationInput, 'targetItemUuid');
-
-		if (normalizedKind === 'toggle_list_type') {
-			return hasItemUuid && !hasNewItemUuid && !hasListUuid && !hasTargetItemUuid;
-		}
-
-		if (
-			normalizedKind === 'update_list_item_text' ||
-			normalizedKind === 'remove_list_item' ||
-			normalizedKind === 'indent_list_item' ||
-			normalizedKind === 'outdent_list_item'
-		) {
-			return hasItemUuid && !hasNewItemUuid && !hasListUuid && !hasTargetItemUuid;
-		}
-
-		if (normalizedKind === 'insert_before' || normalizedKind === 'insert_after') {
-			return !hasItemUuid && hasNewItemUuid && !hasListUuid && hasTargetItemUuid;
-		}
-
-		if (normalizedKind === 'insert_child') {
-			return !hasItemUuid && hasNewItemUuid && !hasListUuid && hasTargetItemUuid;
-		}
-
-		if (normalizedKind === 'move_before' || normalizedKind === 'move_after') {
-			return hasItemUuid && !hasNewItemUuid && !hasListUuid && hasTargetItemUuid;
-		}
-
-		return false;
+		return Object.entries(operationDefinition.inputs).every(([inputName, definition]) => (
+			definition?.required !== true || hasOwnOperationKey(operationInput, inputName)
+		));
 	}
 
 	/**
@@ -1911,10 +2560,8 @@
 	function resolveBlockAttributeOperation(editorHost, options = {}) {
 		if (options.operation && typeof options.operation === 'object') {
 			const suppliedOperation = options.operation;
-			if (String(suppliedOperation.kind || '').trim() === 'block_attribute_change') {
-				return suppliedOperation;
-			}
-
+			// A caller may name an operation, but cannot supply a mutable operation
+			// definition. Resolve every field from the active handler schema.
 			const suppliedOperationId = String(
 				suppliedOperation.id || suppliedOperation.operationId || ''
 			).trim();
@@ -2127,8 +2774,12 @@
 	}
 
 	/**
-	 * Determines whether the given textAlignment capability relies on a virtual data-binding
-	 * (explicitly checking if the attribute is strictly named 'textAlignment').
+	 * Determine whether one text-alignment capability is persisted through
+	 * component bindings rather than a material block attribute.
+	 *
+	 * Virtual alignment values are scoped to their active component or column.
+	 * They must therefore be read from the live schema target and never from the
+	 * shared block-attribute change map, which can represent only one scalar.
 	 *
 	 * @param {Object|null|undefined} textAlignmentCapability - The textAlignment capability configuration object to evaluate.
 	 * @returns {boolean} True if the capability is backed by a virtual binding; otherwise false.
@@ -2427,22 +3078,129 @@
 	}
 
 	/**
-	 * Return whether one public column-alignment target payload matches the
-	 * committed runtime contract.
+	 * Normalize one schema-declared operation input value.
 	 *
-	 * The public API accepts only a zero-based index array or the `'all'`
-	 * shortcut. Scalar values intentionally fail loudly so external callers do
-	 * not depend on undocumented coercion.
+	 * Input requirements are declared by the owning handler schema. This keeps
+	 * FrontEdit's public and generated-operation validation independent from
+	 * operation IDs, block names, or attribute names.
 	 *
-	 * @param {*} columns Candidate explicit column target payload.
-	 * @returns {boolean} True when the payload matches the committed contract.
+	 * @param {*}      value      Candidate input value.
+	 * @param {Object} definition Schema input definition.
+	 * @returns {{valid:boolean,value:*}} Normalized input result.
 	 */
-	function isValidExplicitColumnTarget(columns) {
-		if (columns === 'all') {
-			return true;
+	function normalizeSchemaOperationInput(value, definition = {}) {
+		const type = String(definition?.type || '').trim();
+
+		if (type === 'scalar') {
+			const isScalar = value === null || ['string', 'number', 'boolean'].includes(typeof value);
+			return {
+				valid: isScalar,
+				value,
+			};
 		}
 
-		return Array.isArray(columns);
+		if (type === 'zero_based_indexes_or_all') {
+			if (value === 'all') {
+				return {
+					valid: true,
+					value,
+				};
+			}
+
+			if (!Array.isArray(value)) {
+				return {
+					valid: false,
+					value: null,
+				};
+			}
+
+			const indexes = Array.from(new Set(value))
+				.filter(candidate => Number.isInteger(candidate) && candidate >= 0)
+				.sort((left, right) => left - right);
+
+			return {
+				valid: indexes.length === value.length && indexes.length > 0,
+				value: indexes,
+			};
+		}
+
+		return {
+			valid: false,
+			value: null,
+		};
+	}
+
+	/**
+	 * Validate and normalize every declared input for one block-attribute
+	 * operation without interpreting a handler-specific operation ID. The
+	 * caller may carry executor metadata alongside the operation payload; only
+	 * values named by this schema contract are copied into the result and can
+	 * reach the mutation path.
+	 *
+	 * @param {Object} operation        Schema-declared operation metadata.
+	 * @param {Object} operationOptions Public operation payload.
+	 * @returns {{valid:boolean,values:Object}} Validation result.
+	 */
+	function normalizeBlockAttributeOperationInputs(operation, operationOptions = {}) {
+		const definitions = operation?.inputs && typeof operation.inputs === 'object' && !Array.isArray(operation.inputs)
+			? operation.inputs
+			: null;
+		const normalizedOptions = operationOptions && typeof operationOptions === 'object' && !Array.isArray(operationOptions)
+			? operationOptions
+			: {};
+		const values = {};
+
+		if (!definitions || !Object.keys(definitions).length) {
+			return {
+				valid: false,
+				values,
+			};
+		}
+
+		for (const inputName of Object.keys(definitions)) {
+			const definition = definitions[inputName];
+			const hasInput = Object.prototype.hasOwnProperty.call(normalizedOptions, inputName);
+			if (!hasInput) {
+				if (definition?.required === true) {
+					return {
+						valid: false,
+						values,
+					};
+				}
+				continue;
+			}
+
+			const normalized = normalizeSchemaOperationInput(normalizedOptions[inputName], definition);
+			if (!normalized.valid) {
+				return {
+					valid: false,
+					values,
+				};
+			}
+
+			values[inputName] = normalized.value;
+		}
+
+		if (!Object.prototype.hasOwnProperty.call(values, 'value')) {
+			return {
+				valid: false,
+				values,
+			};
+		}
+
+		const requestedValue = values.value;
+		const allowedValues = Array.isArray(operation?.values) ? operation.values : [];
+		if (allowedValues.length && !allowedValues.some(candidate => candidate === requestedValue)) {
+			return {
+				valid: false,
+				values,
+			};
+		}
+
+		return {
+			valid: true,
+			values,
+		};
 	}
 
 	/**
@@ -2469,36 +3227,16 @@
 				if (!operation) {
 					return null;
 				}
-				const isExplicitColumnAlignmentOperation = (
-					String(operation.attribute || '').trim() === 'columnAlignment'
-				);
-				const isExplicitSetColumnAlign = String(operation.id || '').trim() === 'set_column_align';
-				const hasColumn = Object.prototype.hasOwnProperty.call(operationOptions, 'column');
-				const hasColumns = Object.prototype.hasOwnProperty.call(operationOptions, 'columns');
-				if (isExplicitColumnAlignmentOperation && hasColumn) {
-					return null;
-				}
-				if (isExplicitSetColumnAlign && !hasColumns) {
-					return null;
-				}
-				if (
-					isExplicitColumnAlignmentOperation &&
-					hasColumns &&
-					!isValidExplicitColumnTarget(operationOptions.columns)
-				) {
+				const inputResult = normalizeBlockAttributeOperationInputs(operation, operationOptions);
+				if (!inputResult.valid) {
 					return null;
 				}
 
-				const operationValue = Object.prototype.hasOwnProperty.call(operationOptions, 'value')
-					? operationOptions.value
-					: undefined;
-				return operationValue === undefined
-					? null
-					: {
-						operation,
-						value: operationValue,
-						options: operationOptions,
-					};
+				return {
+					operation,
+					value: inputResult.values.value,
+					options: inputResult.values,
+				};
 			})
 			.filter(Boolean);
 
@@ -2510,19 +3248,12 @@
 		const results = [];
 
 		resolvedOperations.forEach(({ operation, value, options: operationOptions }) => {
-			const hasExplicitColumnTarget = (
-				String(operation.attribute || '').trim() === 'columnAlignment' &&
-				Object.prototype.hasOwnProperty.call(operationOptions || {}, 'columns')
-			);
-			const currentValue = hasExplicitColumnTarget
+			const hasDeclaredScopedInput = Object.keys(operation?.inputs || {}).some(inputName => inputName !== 'value');
+			const currentValue = hasDeclaredScopedInput
 				? undefined
 				: getCurrentBlockAttributeValue(editorHost, operation);
-			const normalizedRequestedValue = String(operation.attribute || '').trim() === 'level'
-				? Number.parseInt(value, 10)
-				: value;
-			const normalizedCurrentValue = String(operation.attribute || '').trim() === 'level'
-				? Number.parseInt(currentValue, 10)
-				: currentValue;
+			const normalizedRequestedValue = value;
+			const normalizedCurrentValue = currentValue;
 
 			if (normalizedCurrentValue === normalizedRequestedValue) {
 				results.push({
@@ -2583,10 +3314,62 @@
 
 		return {
 			results,
+			// A public operation can be a valid no-op when its requested value is
+			// already current. It was still fully processed, so acknowledge it to
+			// the batch executor rather than making an unrelated applied operation
+			// look like a failed staging batch.
 			operationsApplied: results
-				.filter(result => result.applied)
 				.map(result => result.id || result.kind),
 			attributeChanges: editorHost.attributeChanges || {},
+		};
+	}
+
+	/**
+	 * Validate schema-declared block attribute operations without mutation.
+	 *
+	 * @param   {Object} options Preflight options.
+	 * @returns {{valid:boolean, validatedOperationIds:string[], errors:Object[]}} Preflight summary.
+	 */
+	function preflightBlockAttributeOperations(options = {}) {
+		const editorHost = options.editorHost || null;
+		const inputOperations = Array.isArray(options.operations)
+			? options.operations
+			: [ options.operation || options ];
+		const errors = [];
+		const validatedOperationIds = [];
+
+		if (!editorHost || !inputOperations.length) {
+			return {
+				valid: false,
+				validatedOperationIds,
+				errors: [ { code: 'attribute_editor_unavailable' } ],
+			};
+		}
+
+		inputOperations.forEach((inputOperation, index) => {
+			const operationOptions = inputOperation && typeof inputOperation === 'object' && !Array.isArray(inputOperation)
+				? inputOperation
+				: null;
+			const operation = operationOptions ? resolveBlockAttributeOperation(editorHost, operationOptions) : null;
+			const inputResult = operationOptions
+				? normalizeBlockAttributeOperationInputs(operation, operationOptions)
+				: { valid: false };
+			if (
+				!operationOptions ||
+				!operation ||
+				!inputResult.valid
+			) {
+				errors.push({ code: 'attribute_operation_invalid', index });
+				return;
+			}
+
+			validatedOperationIds.push(String(operation.id || '').trim());
+		});
+
+		return {
+			valid: errors.length === 0,
+			validatedOperationIds: validatedOperationIds.filter(Boolean),
+			errors,
 		};
 	}
 
@@ -2733,6 +3516,59 @@
 	}
 
 	/**
+	 * Validate UUID-oriented public list operations without mutating the list.
+	 *
+	 * Insert-child's follow-up indent needs a newly created live item, so this
+	 * preflight validates its externally supplied insertion command. Execution
+	 * remains responsible for resolving the generated item after that insertion.
+	 *
+	 * @param   {Object} options Preflight options.
+	 * @returns {{valid:boolean, validatedOperationKinds:string[], errors:Object[]}} Preflight summary.
+	 */
+	function preflightListOperations(options = {}) {
+		const listTracker = getListTrackerModule();
+		const editorHost = options.editorHost || null;
+		const tracker = options.tracker || getTrackerForEditor(editorHost);
+		const inputOperations = normalizeOperations(options);
+		const errors = [];
+		const validatedOperationKinds = [];
+
+		if (!listTracker || !tracker?.listElement || !editorHost || !inputOperations.length) {
+			return {
+				valid: false,
+				validatedOperationKinds,
+				errors: [ { code: 'list_editor_unavailable' } ],
+			};
+		}
+
+		inputOperations.forEach((inputOperation, index) => {
+			const operationInput = inputOperation && typeof inputOperation === 'object' && !Array.isArray(inputOperation)
+				? inputOperation
+				: null;
+			const normalizedKind = normalizeListOperationKind(operationInput?.kind, options);
+			const expandedInputs = operationInput && normalizedKind
+				? expandApiUuidListOperationInputs(operationInput)
+				: [];
+			const validationInput = expandedInputs[0];
+			const operation = validationInput
+				? buildExecutableListOperation(editorHost, tracker, validationInput, options)
+				: null;
+			if (!normalizedKind || !expandedInputs.length || !operation) {
+				errors.push({ code: 'list_operation_invalid', index });
+				return;
+			}
+
+			validatedOperationKinds.push(normalizedKind);
+		});
+
+		return {
+			valid: errors.length === 0,
+			validatedOperationKinds,
+			errors,
+		};
+	}
+
+	/**
 	 * Execute one list-type change against the currently selected list.
 	 *
 	 * @param   {Object} options Executor options.
@@ -2771,6 +3607,7 @@
 			});
 		},
 		executeComponentOperations,
+		preflightComponentOperations,
 		executeMediaOperation: function executeMediaOperation(options = {}) {
 			return executeMediaOperations({
 				...options,
@@ -2779,9 +3616,16 @@
 			});
 		},
 		executeMediaOperations,
+		preflightMediaOperations,
 		executeBlockAttributeOperation,
 		executeBlockAttributeOperations,
+		preflightBlockAttributeOperations,
+		preflightPublicOperations,
+		executePublicOperations,
+		getPublicComponentOperations,
+		getPublicListOperationContract,
 		executeListOperations,
+		preflightListOperations,
 		executeCurrentListTypeChange,
 		getTrackerForEditor,
 		getCurrentListElement,
@@ -2791,6 +3635,7 @@
 		normalizeBlockAttributeTrackedValue,
 		getTextAlignmentCapability: getNormalizedTextAlignmentCapability,
 		getNormalizedTextAlignmentCapability,
+		isVirtualBindingBackedTextAlignmentCapability,
 		isTextAlignmentOperation,
 	};
 })();

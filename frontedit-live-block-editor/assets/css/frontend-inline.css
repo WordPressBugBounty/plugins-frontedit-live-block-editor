@@ -609,6 +609,7 @@ body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview
 }
 
 .mwp-sfe-btn {
+	box-sizing: border-box;
 	position: relative;
 	color: var(--mwp-sfe-text-light);
 	flex: 1;
@@ -657,7 +658,7 @@ body.mwp-sfe-is-editing.mwp-sfe-batch-session-active:not(.mwp-sfe-active-preview
 	.mwp-sfe-btn[mwp-sfe-btn-loading="true"]::before {
 		content: '';
 		position: absolute;
-		inset: 0;
+		inset: -1px;
 		background: conic-gradient(
 			from calc(var(--angle) - (var(--spread) * 0.5)),
 			transparent 0deg,
