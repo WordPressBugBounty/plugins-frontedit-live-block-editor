@@ -9,7 +9,7 @@
  *     resolveRuntime,
  *     resolveEditingRuntime, getEditOperationContract, getEditableComponents,
  *     getListStructure, getListOperationContract,
- *     getDefaultComponent, getMediaDescriptor, getMediaContext,
+ *     getDefaultComponent, getMediaDescriptor, getMediaContext, getIconLibrary,
  *     isMediaEditable, openEditor, closeEditor, preflightOperations,
  *     applyOperations, preflightListOperations, applyListOperations, stageBlockState,
  *     clearStagedBlockState, refreshBlock, getDirtyBlocks, hasDirtyBlocks,
@@ -1280,6 +1280,7 @@
 			editorState,
 			editorHost,
 			operations: Array.isArray(options.operations) ? options.operations : [],
+			allowInactiveComponents: true,
 		});
 
 		return {
@@ -1302,23 +1303,68 @@
 	 */
 	function applyOperationsToActiveEditor(options = {}) {
 		const editorState = resolveActiveEditorState(options);
-		const editorHost = resolveActiveEditorHost(editorState);
 		const operationExecutor = SFE.SchemaOperationExecutor || null;
-		if (!editorState || !editorHost || typeof operationExecutor?.executePublicOperations !== 'function') {
+		const operations = Array.isArray(options.operations) ? options.operations : [];
+		let editorHost = resolveActiveEditorHost(editorState);
+		if (
+			!editorState ||
+			!editorHost ||
+			!operations.length ||
+			typeof operationExecutor?.preflightPublicOperations !== 'function' ||
+			typeof operationExecutor?.executePublicOperations !== 'function'
+		) {
 			return null;
 		}
 
-		const result = operationExecutor.executePublicOperations({
+		const preflight = operationExecutor.preflightPublicOperations({
 			editorState,
 			editorHost,
-			operations: Array.isArray(options.operations) ? options.operations : [],
+			operations,
+			allowInactiveComponents: true,
 		});
-		const appliedOperationIds = Array.isArray(result?.operationsApplied)
-			? result.operationsApplied
-			: [];
-		const appliedOperationCount = Number(result?.appliedOperationCount);
-		if (!appliedOperationIds.length || !Number.isInteger(appliedOperationCount) || appliedOperationCount <= 0) {
+		if (preflight?.valid !== true) {
 			return null;
+		}
+
+		const appliedOperationIds = [];
+		let appliedOperationCount = 0;
+		for (const operation of operations) {
+			const componentId = String(operation?.componentId || '').trim();
+			// A public batch may legitimately span sibling text, setting, and media
+			// components. FrontEdit owns those component transitions so callers do
+			// not need to split the batch or know which editor host each one uses.
+			if (!componentId || !activateEditorComponent(editorState, componentId)) {
+				return null;
+			}
+
+			editorHost = resolveActiveEditorHost(editorState);
+			if (!editorHost) {
+				return null;
+			}
+			const activeHostElementBeforeOperation = editorHost.element || null;
+
+			const result = operationExecutor.executePublicOperations({
+				editorState,
+				editorHost,
+				operations: [ operation ],
+			});
+			const operationIds = Array.isArray(result?.operationsApplied)
+				? result.operationsApplied
+				: [];
+			const operationCount = Number(result?.appliedOperationCount);
+			if (!operationIds.length || !Number.isInteger(operationCount) || operationCount !== 1) {
+				return null;
+			}
+
+			appliedOperationIds.push(...operationIds);
+			appliedOperationCount += operationCount;
+
+			// An operation such as a heading-level change may replace the active
+			// component's root element. Refresh the session-owned component map before
+			// the next public operation can target the detached pre-replacement node.
+			if (editorHost.element !== activeHostElementBeforeOperation) {
+				syncActiveEditorState(editorState);
+			}
 		}
 
 		syncActiveEditorState(editorState);
@@ -1442,7 +1488,17 @@
 		const fromState = String(options.source || '').trim().toLowerCase() === 'library'
 			? 'library'
 			: 'input';
-		const didApply = editorHost.applyMediaSelection(url, attachmentId, { fromState });
+		const mediaContext = PublicApi.getMediaContext({ uuid: targetUuid });
+		const icon = mediaContext?.mediaType === 'icon'
+			? (SFE.MediaLibraryCache?.get('icon')?.items || []).find(item => item.name === url)
+			: null;
+		if (mediaContext?.mediaType === 'icon' && (!icon || attachmentId != null)) {
+			return null;
+		}
+		const didApply = editorHost.applyMediaSelection(url, attachmentId, {
+			fromState,
+			markup: icon ? String(icon.content || '') : '',
+		});
 
 		return didApply === false ? null : buildEditorSnapshot(activeEditor);
 	}
@@ -1575,6 +1631,7 @@
 				operationPreflight: true,
 				listOperationContracts: true,
 				mediaInspection: true,
+				iconLibrary: true,
 				mediaSessionControl: true,
 				explicitStaging: true,
 				events: true,
@@ -1656,6 +1713,39 @@
 	PublicApi.getMediaDescriptor = function getMediaDescriptor(options = {}) {
 		return resolveMediaDescriptor(options);
 	};
+	/**
+	 * Load the WordPress Icon Library through its core REST endpoint.
+	 *
+	 * The complete records remain in FrontEdit's media cache so public icon
+	 * operations can validate names and render the selected SVG immediately.
+	 *
+	 * @returns {Promise<Object[]>} Registered icon records.
+	 */
+	PublicApi.getIconLibrary = async function getIconLibrary() {
+		const cache = SFE.MediaLibraryCache;
+		const cached = cache?.get('icon');
+		if (Array.isArray(cached?.items)) {
+			return cached.items.slice();
+		}
+		const endpoint = String(getManagerData().iconLibraryUrl || '').trim();
+		if (!endpoint) {
+			throw new Error('Icon Library URL is not configured.');
+		}
+		const url = new URL(endpoint, window.location.href);
+		url.searchParams.set('context', 'view');
+		const response = await fetch(url.toString(), {
+			headers: { 'X-WP-Nonce': getManagerData().nonce },
+		});
+		if (!response.ok) {
+			throw new Error(`Icon Library request failed: HTTP ${response.status}`);
+		}
+		const icons = await response.json();
+		if (!Array.isArray(icons)) {
+			throw new Error('Icon Library response was invalid.');
+		}
+		cache.set('icon', { items: icons });
+		return icons.slice();
+	};
 	PublicApi.getMediaContext = function getMediaContext(options = {}) {
 		const descriptor = resolveMediaDescriptor(options);
 		const mediaHelper = SFE.MediaHelper || null;
@@ -1675,7 +1765,9 @@
 			accept: typeof mediaHelper.getAcceptTypes === 'function'
 				? String(mediaHelper.getAcceptTypes(descriptor) || '*/*').trim() || '*/*'
 				: '*/*',
-			label: mediaType === 'audio' ? 'audio block' : (mediaType === 'video' ? 'video block' : (mediaType === 'file' ? 'file block' : 'media block')),
+			label: mediaType === 'icon' ? 'icon block' : (mediaType === 'audio' ? 'audio block' : (mediaType === 'video' ? 'video block' : (mediaType === 'file' ? 'file block' : 'media block'))),
+			selectionSource: mediaType === 'icon' ? 'icon_library' : 'media_library',
+			canUpload: mediaType !== 'icon',
 			descriptor,
 		};
 	};

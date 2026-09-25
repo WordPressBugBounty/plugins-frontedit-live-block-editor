@@ -110,6 +110,10 @@ External plugins must not:
 
 #### Server-side AI discovery
 
+Trusted plugins that need the server-side integration boundary should use
+`MWPSFE_Public_API` as documented in `php-integration-contract.md`; handler,
+permission, renderer, and Pro storage classes are not public dependencies.
+
 When the WordPress Abilities API is available, an authorized FrontEdit editor
 may call the following post-scoped, read-only abilities:
 
@@ -304,10 +308,11 @@ type EditOperationContract = {
   operations: Array<{
     id: string;
     componentId: string;
-    inputs: Record<string, { required: boolean; type: string }>;
+    inputs: Record<string, { required: boolean; type: string; scalarType?: 'boolean' }>;
     values?: Array<string | number | boolean | null>;
     allowedRunFormats?: string[];
     requiredRunFormatAttributes?: Record<string, string[]>;
+    runFormatSettings?: Record<string, Record<string, { type: 'boolean' }>>;
   }>;
 };
 ```
@@ -325,11 +330,16 @@ Rules:
    it appears here. FrontEdit does not maintain a second public allowlist or
    synthesize generic operations from a block type.
 5. `allowedRunFormats`, when present for a `rich_text_runs` input, contains
-   the handler-declared format tokens permitted in each returned run.
+   the exact, case-preserving handler-declared format tokens permitted in each
+   returned run. A handler may narrow these below its complete toolbar format
+   set for operations that do not support host-level controls inside text runs.
    `requiredRunFormatAttributes`, when present, maps a format token to the
    minimum named values that must be present in that run's
    `formatAttributes[formatToken]` object. It exposes neither rendering tags,
-   optional format data, selectors, nor mutation details.
+   optional format data, selectors, nor mutation details. `runFormatSettings`
+   declares semantic settings required under
+   `formatAttributes[formatToken].settings`; saved renderer attributes are not
+   part of the public contract.
 6. List editing retains its established UUID-oriented list API. Its legal
    operation kinds and inputs are exposed separately through
    `getListOperationContract(...)`; they are not part of this generic
@@ -379,9 +389,11 @@ type OperationPreflightResult = {
 #### `applyOperations(options) -> OperationResult|null`
 
 Stage the same preflighted opaque batch through FrontEdit's shared schema
-executor. FrontEdit resolves the operation locally from the active handler,
-performs normal preview and history work, and leaves review, save, and cancel
-under its normal editor lifecycle.
+executor. A batch may target multiple sibling components in one block.
+FrontEdit resolves every operation against its declared component, activates
+the required internal editor host for each operation in order, records the
+completed batch as one history step, and leaves review, save, and cancel under
+its normal editor lifecycle.
 
 Rules:
 
@@ -390,6 +402,8 @@ Rules:
 3. Callers must not send `kind`, `attribute`, `attributes`, `bindingSource`, DOM selectors, or serialization metadata.
 4. Callers processing generated or untrusted content must require `valid === true` before apply.
 5. This is a staging API, never a direct-save API.
+6. Callers do not need to split a batch by component or activate each component;
+   `applyOperations(...)` owns those internal transitions.
 
 `applyOperations(...)` returns `appliedOperationCount` in addition to its
 operation ID summary. Integrations that generate a batch must treat the stage
@@ -492,7 +506,9 @@ await stage([{
 
 Use only `allowedRunFormats` exposed by that operation. When
 `requiredRunFormatAttributes` declares values for a format, include them in the
-matching run's `formatAttributes` object.
+matching run's `formatAttributes` object. When `runFormatSettings` declares an
+anchor-backed format, include every declared JSON boolean under its nested
+`settings` object. FrontEdit owns conversion to saved anchor markup.
 
 #### Scalar Block Setting
 
@@ -549,10 +565,14 @@ await stage([{
   componentId: link.componentId,
   inputs: {
     href: 'https://example.com/pricing',
-    new_tab: true
+    new_tab: true,
+    no_follow: false
   }
 }]);
 ```
+
+`new_tab` and `no_follow` are JSON booleans when supplied. Omit either optional
+input to preserve its current semantic setting.
 
 #### Media URL Replacement
 
@@ -882,6 +902,19 @@ const mediaContext = SFE.PublicApi.getMediaContext({
 ```
 
 Returns `null` when the target block is not media-editable through the documented runtime surface.
+The result includes `selectionSource` (`media_library` or `icon_library`) and
+`canUpload`. An icon component has `canUpload: false`; its `url` operation input
+is a registered icon name rather than a network URL.
+
+#### `getIconLibrary() -> Promise<Icon[]>`
+
+Loads WordPress's `/wp/v2/icons` collection and returns records with `name`,
+`label`, and sanitized SVG `content`. FrontEdit caches the records for its own
+picker, public operation validation, and live preview. Call this before
+preflighting or applying an icon replacement through `applyOperations(...)`.
+The icon operation's `values` array is the exact server-advertised name list;
+send one of those names as `inputs.url`. Other media operations continue to use
+normal URLs. A missing or unknown icon is rejected rather than staged.
 
 #### `getMediaDescriptor(options) -> MediaDescriptor|null`
 
@@ -911,6 +944,9 @@ Rules:
 3. `attachmentId` is optional.
 4. `source` may be `'library'` or `'input'` and defaults to the input-style save transition when omitted.
 5. Returns an updated `EditorSnapshot` when the active media session accepted the selection, otherwise `null`.
+6. For an Icon Library component, call `getIconLibrary()` first and pass the
+   selected `name` as `url`. FrontEdit uses the cached SVG for the preview;
+   `attachmentId` is not used.
 
 ### Explicit Staging
 
@@ -1175,6 +1211,8 @@ Required fields:
   "mediaType": "image",
   "accept": "image/*",
   "label": "image block",
+  "selectionSource": "media_library",
+  "canUpload": true,
   "descriptor": {
     "componentId": "image",
     "scopeSelector": "figure",
@@ -1192,7 +1230,9 @@ Required fields:
 3. `mediaType`
 4. `accept`
 5. `label`
-6. `descriptor`
+6. `selectionSource`
+7. `canUpload`
+8. `descriptor`
 
 ### `DirtyBlock`
 

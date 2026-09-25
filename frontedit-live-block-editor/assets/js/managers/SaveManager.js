@@ -9,6 +9,7 @@
  *   SFE.Api                      - .apiCall
  *   SFE.BlockSerializer          - .buildBlockPayload
  *   SFE.ListBlockTracker
+ *   SFE.SchemaEditorHost         - .resolveTextEditorHost
  *   SFE.ElementUpdater           - .applyNewHTML
  *   SFE.TIMING
  *   SFE.SaveHelpers              - .setButtonLoading, .clearButtonLoading,
@@ -506,6 +507,7 @@
 
 		// Store reference to this editor session for validation
 		const thisEditorSession = editorState;
+		const textEditorHost = SFE.SchemaEditorHost?.resolveTextEditorHost?.(editorState) || null;
 		
 		// Cleanup editor resources
 		if (editorState.resizeObserver) {
@@ -552,7 +554,6 @@
 		}
 		if (Array.isArray(editorState.editableComponents)) {
 			const elementPrep = SFE.ElementPrep || null;
-			const textEditorHost = SFE.SchemaEditorHost?.resolveTextEditorHost?.(editorState) || null;
 			editorState.editableComponents.forEach(component => {
 				if (!component || !component.element) return;
 				component.element.classList.remove(
@@ -572,6 +573,16 @@
 				}
 			});
 		}
+
+		// A successful save bypasses EditorLifecycle's normal close path, so it
+		// must release the rich-text host before replacing the edited DOM. This
+		// removes document-level selection listeners that otherwise keep acting
+		// on the detached list editor when text is selected in another block.
+		if (textEditorHost && typeof textEditorHost.destroy === 'function') {
+			textEditorHost.destroy();
+		}
+		delete editorState.activeSchemaHost;
+		delete editorState.textEditorHost;
 
 		// Cleanup list tracker
 		if (editorState.listTracker) {

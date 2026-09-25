@@ -4,7 +4,7 @@ Tags: frontend editor, front-end editing, gutenberg, block editor, inline editor
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
@@ -42,7 +42,7 @@ https://www.youtube.com/watch?v=ZsCPpIiREa0
 
 ### </> Built for Developers Too
 
-* **Build on top of FrontEdit.** A stable Public JavaScript API lets plugins, custom tools, and AI assistants discover editor capabilities and safely perform the same block editing operations used by FrontEdit itself.
+* **Build on top of FrontEdit.** Stable JavaScript and PHP public APIs let plugins, custom tools, and AI assistants discover authorized editor capabilities and safely stage the same block editing operations used by FrontEdit itself.
 * **Extend compatible blocks.** A schema-driven custom block handler system lets developers add front-end editing support for compatible custom Gutenberg blocks without modifying the plugin core.
 
 = FrontEdit brings WordPress front-end editing to the place it belongs: the front end. =
@@ -181,6 +181,8 @@ FrontEdit includes a stable Public JavaScript API for developers who want to int
 
 The versioned Public API provides documented runtime contracts for interacting with the editor, inspecting supported blocks, applying schema-backed content and attribute updates, working with media and list operations, responding to editor lifecycle events, and building integrations designed for long-term compatibility. `getListOperationContract()` exposes the FrontEdit-owned list operation and input descriptor so integrations do not maintain parallel list-operation maps. Server-side AI integrations can also read handler-derived current operation state for text, media, host links, and settings without reconstructing a parallel block-attribute map.
 
+The Icon block uses WordPress's Icon Library. The public API advertises registered icon names, loads their SVG previews, and stages a selected icon through the same FrontEdit review and save flow as other supported blocks.
+
 Whether you're building custom editing tools, AI-powered workflows, or integrations with your own plugins, the Public API is the recommended way to interact with FrontEdit at runtime.
 
 The complete API reference is included with the plugin in `docs/frontend-runtime-extension-contract.md`, which documents the available methods, events, supported runtime behavior, versioning guarantees, and integration guidelines for developers.
@@ -287,6 +289,15 @@ In both cases, changes are staged for your review before you save them.
 
 == Changelog ==
 
+= 1.3.0 =
+* Changed public anchor-backed rich-text runs to expose semantic new-tab and no-follow booleans while keeping saved anchor attributes private to FrontEdit.
+* Declared button link new-tab and no-follow operation inputs as JSON booleans and unified native and public link rendering through the same schema-backed helper.
+* Fix stale link action bar when switching anchors.
+* Fixed list saves leaving selection listeners attached to the replaced editor, which caused errors when selecting text in other blocks.
+* Added a stable PHP API for secure integrations with FrontEdit's editing, draft, rendering, and operation workflows.
+* Added public Icon Library discovery and validated icon-name staging for Icon blocks, including SVG previews for third-party integrations.
+* Fixed an issue where deleting a space between differently formatted words in a button block would create a second link inside the button's link.
+
 = 1.2.0 =
 * Overhauled the Public JavaScript API with handler-declared operation contracts that expose only the operations, inputs, formats, and allowed values supported by each editable block.
 * Replaced the separate public text, media, block-attribute, and structured-edit mutation APIs with the unified getEditOperationContract(), preflightOperations(), and applyOperations() workflow.
@@ -340,6 +351,9 @@ In both cases, changes are staged for your review before you save them.
 * Initial public 1.0.0 release for the WordPress plugin repository.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Public rich-text integrations must send anchor settings under formatAttributes[format].settings and use JSON booleans for new-tab and no-follow inputs. Trusted PHP integrations should use MWPSFE_Public_API instead of FrontEdit registries, handlers, permission services, or renderers.
 
 = 1.2.0 =
 Major Public API update. Integrations using the previous text, media, attribute, or structured-edit mutation APIs should migrate to getEditOperationContract(), preflightOperations(), and applyOperations(). List integrations can now use getListOperationContract().

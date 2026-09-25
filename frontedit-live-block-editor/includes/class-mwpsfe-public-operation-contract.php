@@ -230,11 +230,17 @@ class MWPSFE_Public_Operation_Contract {
 		$inputs = isset( $operation['inputs'] ) && is_array( $operation['inputs'] ) ? $operation['inputs'] : array();
 
 		if ( 'text_rewrite' === $kind && isset( $inputs['runs'] ) ) {
-			return array(
-				'runs' => array(
-					'source' => 'component_content_runs',
-				),
+			$definition = array(
+				'source' => 'component_content_runs',
 			);
+			$run_formats = isset( $operation['runFormats'] ) && is_array( $operation['runFormats'] )
+				? array_values( array_filter( array_map( array( self::class, 'normalize_public_format_token' ), $operation['runFormats'] ) ) )
+				: array();
+			if ( ! empty( $run_formats ) ) {
+				$definition['formats'] = $run_formats;
+			}
+
+			return array( 'runs' => $definition );
 		}
 
 		if ( 'replace_component_media' === $kind ) {
@@ -375,7 +381,14 @@ class MWPSFE_Public_Operation_Contract {
 		} elseif ( 'component_text_alignment' === $source ) {
 			$value = self::get_component_text_alignment_state( $root, $component, $context, $found );
 		} elseif ( 'component_content_runs' === $source ) {
-			$value = self::get_component_content_runs( $attrs, $root, $component, $context, $found );
+			$value = self::get_component_content_runs(
+				$attrs,
+				$root,
+				$component,
+				$context,
+				isset( $definition['formats'] ) && is_array( $definition['formats'] ) ? $definition['formats'] : array(),
+				$found
+			);
 		} elseif ( 'component_binding' === $source ) {
 			$value = self::get_component_binding_value(
 				$attrs,
@@ -448,7 +461,7 @@ class MWPSFE_Public_Operation_Contract {
 		$normalized = array();
 		foreach ( $runs as $run ) {
 			$formats = isset( $run['formats'] ) && is_array( $run['formats'] )
-				? array_values( array_filter( array_map( 'sanitize_key', $run['formats'] ) ) )
+				? array_values( array_filter( array_map( array( self::class, 'normalize_public_format_token' ), $run['formats'] ) ) )
 				: array();
 			$attributes = isset( $run['formatAttributes'] ) && is_array( $run['formatAttributes'] )
 				? $run['formatAttributes']
@@ -477,10 +490,11 @@ class MWPSFE_Public_Operation_Contract {
 	 * @param \DOMElement|null         $root      Isolated saved-markup root.
 	 * @param array<string,mixed>      $component Schema component definition.
 	 * @param array<string,int|string> $context   Concrete repeat context.
-	 * @param bool                     $found     Whether a current component value was found.
+	 * @param array<int,string>        $run_formats Exact inline formats accepted by the rewrite operation.
+	 * @param bool                     $found       Whether a current component value was found.
 	 * @return array<int,array<string,mixed>> Structured public run records.
 	 */
-	private static function get_component_content_runs( array $attrs, ?\DOMElement $root, array $component, array $context, bool &$found ): array {
+	private static function get_component_content_runs( array $attrs, ?\DOMElement $root, array $component, array $context, array $run_formats, bool &$found ): array {
 		$found   = false;
 		$binding = self::get_component_content_binding( $component );
 		if ( empty( $binding ) ) {
@@ -516,7 +530,7 @@ class MWPSFE_Public_Operation_Contract {
 				);
 		}
 
-		return self::build_component_rich_text_runs( (string) $value, $component );
+		return self::build_component_rich_text_runs( (string) $value, $component, $run_formats );
 	}
 
 	/**
@@ -599,17 +613,18 @@ class MWPSFE_Public_Operation_Contract {
 	/**
 	 * Build public rich-text runs from a handler-owned component HTML value.
 	 *
-	 * @param string              $html      Current component HTML.
-	 * @param array<string,mixed> $component Schema component definition.
+	 * @param string              $html        Current component HTML.
+	 * @param array<string,mixed> $component   Schema component definition.
+	 * @param array<int,string>   $run_formats Exact inline formats accepted by the rewrite operation.
 	 * @return array<int,array<string,mixed>> Structured public run records.
 	 */
-	private static function build_component_rich_text_runs( string $html, array $component ): array {
+	private static function build_component_rich_text_runs( string $html, array $component, array $run_formats ): array {
 		$html = trim( $html );
 		if ( '' === $html || ! class_exists( '\\DOMDocument' ) ) {
 			return array();
 		}
 
-		$tag_map = self::get_component_inline_format_tag_map( $component );
+		$tag_map = self::get_component_inline_format_tag_map( $component, $run_formats );
 		$document = new \DOMDocument();
 		$previous = libxml_use_internal_errors( true );
 		$loaded   = $document->loadHTML(
@@ -635,10 +650,11 @@ class MWPSFE_Public_Operation_Contract {
 	/**
 	 * Build a handler inline-format tag-to-token map for rich-text state reads.
 	 *
-	 * @param array<string,mixed> $component Schema component definition.
-	 * @return array<string,array<int,string>> Format tokens keyed by lower-case tag.
+	 * @param array<string,mixed> $component   Schema component definition.
+	 * @param array<int,string>   $run_formats Exact inline formats accepted by the rewrite operation.
+	 * @return array<string,array<int,array<string,mixed>>> Format records keyed by lower-case tag.
 	 */
-	private static function get_component_inline_format_tag_map( array $component ): array {
+	private static function get_component_inline_format_tag_map( array $component, array $run_formats ): array {
 		$editor       = isset( $component['editor'] ) && is_array( $component['editor'] ) ? $component['editor'] : array();
 		$capabilities = isset( $editor['inlineFormatCapabilities'] ) && is_array( $editor['inlineFormatCapabilities'] )
 			? $editor['inlineFormatCapabilities']
@@ -646,10 +662,17 @@ class MWPSFE_Public_Operation_Contract {
 		$tag_map      = array();
 
 		foreach ( $capabilities as $token => $capability ) {
-			$token = sanitize_key( (string) $token );
+			$token = self::normalize_public_format_token( $token );
 			$tag   = is_array( $capability ) ? strtolower( trim( (string) ( $capability['tag'] ?? '' ) ) ) : '';
-			if ( '' !== $token && 1 === preg_match( '/^[a-z][a-z0-9-]*$/', $tag ) ) {
-				$tag_map[ $tag ][] = $token;
+			if (
+				'' !== $token
+				&& ( empty( $run_formats ) || in_array( $token, $run_formats, true ) )
+				&& 1 === preg_match( '/^[a-z][a-z0-9-]*$/', $tag )
+			) {
+				$tag_map[ $tag ][] = array(
+					'token'      => $token,
+					'capability' => $capability,
+				);
 			}
 		}
 
@@ -661,8 +684,8 @@ class MWPSFE_Public_Operation_Contract {
 	 *
 	 * @param \DOMNode                       $node                     Current DOM node.
 	 * @param array<int,string>               $active_formats           Active format tokens.
-	 * @param array<string,array<string,string>> $active_format_attributes Active format attributes.
-	 * @param array<string,array<int,string>> $tag_map                  Tag-to-token map.
+	 * @param array<string,array<string,mixed>> $active_format_attributes Active format attributes.
+	 * @param array<string,array<int,array<string,mixed>>> $tag_map     Tag-to-format-record map.
 	 * @param array<int,array<string,mixed>>  $runs                     Run collection by reference.
 	 * @return void
 	 */
@@ -682,20 +705,29 @@ class MWPSFE_Public_Operation_Contract {
 				return;
 			}
 
-			foreach ( (array) ( $tag_map[ $tag ] ?? array() ) as $token ) {
+			foreach ( (array) ( $tag_map[ $tag ] ?? array() ) as $format_record ) {
+				$token      = self::normalize_public_format_token( $format_record['token'] ?? '' );
+				$capability = isset( $format_record['capability'] ) && is_array( $format_record['capability'] )
+					? $format_record['capability']
+					: array();
+				if ( '' === $token ) {
+					continue;
+				}
 				if ( ! in_array( $token, $active_formats, true ) ) {
 					$active_formats[] = $token;
 				}
 
 				if ( 'a' === $tag && $node instanceof \DOMElement ) {
 					$attributes = array();
-					foreach ( array( 'href', 'target', 'rel' ) as $attribute ) {
-						if ( $node->hasAttribute( $attribute ) ) {
-							$value = trim( wp_check_invalid_utf8( (string) $node->getAttribute( $attribute ) ) );
-							if ( '' !== $value ) {
-								$attributes[ $attribute ] = $value;
-							}
+					if ( $node->hasAttribute( 'href' ) ) {
+						$href = trim( wp_check_invalid_utf8( (string) $node->getAttribute( 'href' ) ) );
+						if ( '' !== $href ) {
+							$attributes['href'] = $href;
 						}
+					}
+					$settings = self::read_anchor_semantic_settings( $node, $capability );
+					if ( ! empty( $settings ) ) {
+						$attributes['settings'] = $settings;
 					}
 					if ( ! empty( $attributes ) ) {
 						$active_format_attributes[ $token ] = $attributes;
@@ -710,18 +742,46 @@ class MWPSFE_Public_Operation_Contract {
 	}
 
 	/**
+	 * Read handler-declared semantic settings from one saved anchor element.
+	 *
+	 * This is the server-side public-state boundary. Renderer attributes remain
+	 * private to FrontEdit and are never returned in public rich-text runs.
+	 *
+	 * @param \DOMElement        $anchor     Saved anchor element.
+	 * @param array<string,mixed> $capability Handler inline-format capability.
+	 * @return array<string,bool> Declared semantic link settings.
+	 */
+	private static function read_anchor_semantic_settings( \DOMElement $anchor, array $capability ): array {
+		$definitions = isset( $capability['settings'] ) && is_array( $capability['settings'] )
+			? $capability['settings']
+			: array();
+		$settings    = array();
+		$rel_tokens  = preg_split( '/\s+/', strtolower( trim( $anchor->getAttribute( 'rel' ) ) ) );
+		$rel_tokens  = is_array( $rel_tokens ) ? array_filter( $rel_tokens ) : array();
+
+		if ( 'boolean' === ( $definitions['new_tab']['type'] ?? '' ) ) {
+			$settings['new_tab'] = '_blank' === strtolower( trim( $anchor->getAttribute( 'target' ) ) );
+		}
+		if ( 'boolean' === ( $definitions['no_follow']['type'] ?? '' ) ) {
+			$settings['no_follow'] = in_array( 'nofollow', $rel_tokens, true );
+		}
+
+		return $settings;
+	}
+
+	/**
 	 * Append one rich-text state run, merging compatible adjacent runs.
 	 *
 	 * @param array<int,array<string,mixed>>        $runs              Existing run collection.
 	 * @param string                                 $text              Current text fragment.
 	 * @param array<int,string>                      $formats           Active format tokens.
-	 * @param array<string,array<string,string>>    $format_attributes Active format attributes.
+	 * @param array<string,array<string,mixed>>     $format_attributes Active format attributes.
 	 * @return void
 	 */
 	private static function append_component_rich_text_run( array &$runs, string $text, array $formats, array $format_attributes ): void {
 		$run = array(
 			'text'             => $text,
-			'formats'          => array_values( array_unique( array_filter( array_map( 'sanitize_key', $formats ) ) ) ),
+			'formats'          => array_values( array_unique( array_filter( array_map( array( self::class, 'normalize_public_format_token' ), $formats ) ) ) ),
 			'formatAttributes' => $format_attributes,
 		);
 		$last_index = count( $runs ) - 1;
@@ -1473,10 +1533,15 @@ class MWPSFE_Public_Operation_Contract {
 			}
 		}
 		if ( self::operation_accepts_rich_text_runs( $inputs ) ) {
-			$projected['allowedRunFormats'] = self::get_component_run_format_tokens( $component );
-			$required_format_attributes     = self::get_component_required_run_format_attributes( $component );
+			$run_formats                    = self::get_component_run_format_tokens( $component, $operation );
+			$projected['allowedRunFormats'] = $run_formats;
+			$required_format_attributes     = self::get_component_required_run_format_attributes( $component, $run_formats );
 			if ( ! empty( $required_format_attributes ) ) {
 				$projected['requiredRunFormatAttributes'] = $required_format_attributes;
+			}
+			$format_settings = self::get_component_run_format_settings( $component, $run_formats );
+			if ( ! empty( $format_settings ) ) {
+				$projected['runFormatSettings'] = $format_settings;
 			}
 		}
 
@@ -1507,21 +1572,28 @@ class MWPSFE_Public_Operation_Contract {
 	 * necessary to construct a valid rich-text run.
 	 *
 	 * @param array<string,mixed> $component Owning schema component definition.
+	 * @param array<string,mixed> $operation Owning schema operation definition.
 	 * @return array<int,string> Supported public format tokens.
 	 */
-	private static function get_component_run_format_tokens( array $component ): array {
+	private static function get_component_run_format_tokens( array $component, array $operation ): array {
 		$editor       = isset( $component['editor'] ) && is_array( $component['editor'] ) ? $component['editor'] : array();
 		$capabilities = isset( $editor['inlineFormatCapabilities'] ) && is_array( $editor['inlineFormatCapabilities'] )
 			? $editor['inlineFormatCapabilities']
 			: array();
-
-		return array_values(
+		$formats      = array_values(
 			array_unique(
 				array_filter(
-					array_map( 'sanitize_key', array_keys( $capabilities ) )
+					array_map( array( self::class, 'normalize_public_format_token' ), array_keys( $capabilities ) )
 				)
 			)
 		);
+		$declared_run_formats = isset( $operation['runFormats'] ) && is_array( $operation['runFormats'] )
+			? array_values( array_filter( array_map( array( self::class, 'normalize_public_format_token' ), $operation['runFormats'] ) ) )
+			: array();
+
+		return empty( $declared_run_formats )
+			? $formats
+			: array_values( array_intersect( $formats, $declared_run_formats ) );
 	}
 
 	/**
@@ -1531,10 +1603,11 @@ class MWPSFE_Public_Operation_Contract {
 	 * inline capability metadata. It lets an integration preserve a valid format
 	 * without exposing selectors, renderer tags, or optional implementation data.
 	 *
-	 * @param array<string,mixed> $component Owning schema component definition.
+	 * @param array<string,mixed> $component   Owning schema component definition.
+	 * @param array<int,string>   $run_formats Exact format tokens allowed by the rewrite operation.
 	 * @return array<string,array<int,string>> Required attributes keyed by format token.
 	 */
-	private static function get_component_required_run_format_attributes( array $component ): array {
+	private static function get_component_required_run_format_attributes( array $component, array $run_formats ): array {
 		$editor       = isset( $component['editor'] ) && is_array( $component['editor'] ) ? $component['editor'] : array();
 		$capabilities = isset( $editor['inlineFormatCapabilities'] ) && is_array( $editor['inlineFormatCapabilities'] )
 			? $editor['inlineFormatCapabilities']
@@ -1542,8 +1615,8 @@ class MWPSFE_Public_Operation_Contract {
 		$requirements = array();
 
 		foreach ( $capabilities as $format => $capability ) {
-			$format = sanitize_key( (string) $format );
-			if ( '' === $format || ! is_array( $capability ) ) {
+			$format = self::normalize_public_format_token( $format );
+			if ( '' === $format || ! in_array( $format, $run_formats, true ) || ! is_array( $capability ) ) {
 				continue;
 			}
 
@@ -1558,6 +1631,39 @@ class MWPSFE_Public_Operation_Contract {
 		}
 
 		return $requirements;
+	}
+
+	/**
+	 * Project handler-declared semantic settings for public rich-text formats.
+	 *
+	 * @param array<string,mixed> $component   Owning schema component definition.
+	 * @param array<int,string>   $run_formats Exact format tokens allowed by the rewrite operation.
+	 * @return array<string,array<string,array{type:string}>> Settings keyed by format token.
+	 */
+	private static function get_component_run_format_settings( array $component, array $run_formats ): array {
+		$editor       = isset( $component['editor'] ) && is_array( $component['editor'] ) ? $component['editor'] : array();
+		$capabilities = isset( $editor['inlineFormatCapabilities'] ) && is_array( $editor['inlineFormatCapabilities'] )
+			? $editor['inlineFormatCapabilities']
+			: array();
+		$projected    = array();
+
+		foreach ( $capabilities as $format => $capability ) {
+			$format      = self::normalize_public_format_token( $format );
+			$definitions = is_array( $capability ) && isset( $capability['settings'] ) && is_array( $capability['settings'] )
+				? $capability['settings']
+				: array();
+			if ( ! in_array( $format, $run_formats, true ) ) {
+				continue;
+			}
+			foreach ( $definitions as $name => $definition ) {
+				$name = sanitize_key( (string) $name );
+				if ( '' !== $format && '' !== $name && 'boolean' === ( $definition['type'] ?? '' ) ) {
+					$projected[ $format ][ $name ] = array( 'type' => 'boolean' );
+				}
+			}
+		}
+
+		return $projected;
 	}
 
 	/**
@@ -1579,6 +1685,9 @@ class MWPSFE_Public_Operation_Contract {
 				'type'     => $type,
 				'required' => ! empty( $definition['required'] ),
 			);
+			if ( 'scalar' === $type && 'boolean' === ( $definition['scalarType'] ?? '' ) ) {
+				$projected[ $name ]['scalarType'] = 'boolean';
+			}
 		}
 
 		return $projected;
@@ -1598,5 +1707,20 @@ class MWPSFE_Public_Operation_Contract {
 	private static function normalize_public_input_name( $name ): string {
 		$name = trim( (string) $name );
 		return 1 === preg_match( '/^[A-Za-z][A-Za-z0-9_]*$/', $name ) ? $name : '';
+	}
+
+	/**
+	 * Validate one handler-declared rich-text format token without changing it.
+	 *
+	 * Format tokens are shared protocol identifiers between the server-side
+	 * contract and browser executor. Lowercasing a token such as `buttonLink`
+	 * would advertise a value that the active handler does not recognize.
+	 *
+	 * @param mixed $token Candidate handler-declared format token.
+	 * @return string Exact valid public format token, or an empty string.
+	 */
+	private static function normalize_public_format_token( $token ): string {
+		$token = trim( (string) $token );
+		return 1 === preg_match( '/^[A-Za-z][A-Za-z0-9_-]*$/', $token ) ? $token : '';
 	}
 }

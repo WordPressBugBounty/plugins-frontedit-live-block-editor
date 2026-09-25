@@ -195,6 +195,11 @@ component keys, it requires a `target` object:
 components may be combined in one schema; FrontEdit switches at component scope
 but still serializes the complete block.
 
+For `mediaType: 'icon'`, bind the selected name to the block attribute and
+declare the registered icon names as the replacement operation's `values`.
+Public callers load `SFE.PublicApi.getIconLibrary()` before staging. Icon
+components do not accept an upload, attachment ID, or external URL.
+
 ### Repeated components
 
 Use `repeat` for a component that occurs in a table, list, or another repeated
@@ -248,7 +253,7 @@ uses that representation.
 Use the protected helper methods on the abstract edit handler to declare the
 matching operations. Common helpers are:
 
-- `get_editor_text_rewrite_operation( $component_id, $public_operation = true )`
+- `get_editor_text_rewrite_operation( $component_id, $public_operation = true, $run_formats = array() )`
 - `get_editor_inline_format_change_operation( $component_id, $formats )`
 - `get_editor_inline_attribute_change_operation( $component_id, 'link', $capabilities )`
 - `get_editor_block_attribute_change_operation( $operation_id, $component_id, $capability, $input_requirements = array() )`
@@ -292,11 +297,28 @@ runtime validator and schema documentation, never in an integration-specific
 allowlist.
 
 For a `rich_text_runs` public operation, FrontEdit automatically projects the
-component's `inlineFormatCapabilities` tokens as `allowedRunFormats`. If a
-format capability declares `requiredAttributes`, FrontEdit also projects only
-those names as `requiredRunFormatAttributes`; integrations must include those
-values under the matching run `formatAttributes` key. Do not duplicate this
-requirement in a handler operation or in an integration-specific map.
+component's `inlineFormatCapabilities` tokens as `allowedRunFormats`, preserving
+their exact handler-declared casing. Pass the optional `$run_formats` argument
+to `get_editor_text_rewrite_operation()` when only a subset is valid for that
+rewrite. This is required when a component has host-level toolbar capabilities
+that are not legal inside structured text runs. If a permitted format capability
+declares `requiredAttributes`, FrontEdit also projects only those names as
+`requiredRunFormatAttributes`; integrations must include those values under the
+matching run `formatAttributes` key. Do not duplicate this requirement in an
+integration-specific map.
+
+Anchor-backed capabilities declare semantic settings separately:
+
+```php
+'settings' => array(
+	'new_tab'   => array( 'type' => 'boolean' ),
+	'no_follow' => array( 'type' => 'boolean' ),
+),
+```
+
+FrontEdit projects those declarations as `runFormatSettings`. Public runs use
+`formatAttributes[format].settings` with complete JSON boolean values; renderer
+attributes remain private to FrontEdit.
 
 ### Current public operation state
 
@@ -310,7 +332,7 @@ For operations created with the protected helpers, FrontEdit reads current state
 from the same handler schema automatically:
 
 - text rewrites receive complete current `runs`, including declared inline link
-  `href`, `target`, and `rel` attributes;
+  `href` and semantic `new_tab` / `no_follow` settings;
 - media replacement receives its current `url` and `attachmentId` from the file
   component's existing bindings;
 - host-link changes receive `href`, `new_tab`, and `no_follow` from the host

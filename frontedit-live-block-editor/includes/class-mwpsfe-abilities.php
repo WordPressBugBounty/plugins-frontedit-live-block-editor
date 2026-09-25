@@ -118,6 +118,33 @@ class MWPSFE_Abilities {
 	}
 
 	/**
+	 * Return the registered public ability definitions as data-only metadata.
+	 *
+	 * Execution and permission callbacks remain private implementation details.
+	 * Consumers use this catalog to advertise the abilities FrontEdit actually
+	 * registers without maintaining a duplicate list in another plugin.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function get_public_ability_catalog(): array {
+		$catalog = array();
+
+		foreach ( $this->get_ability_definitions() as $name => $definition ) {
+			$catalog[] = array(
+				'name'          => $name,
+				'label'         => $definition['label'],
+				'description'   => $definition['description'],
+				'category'      => $definition['category'],
+				'meta'          => $definition['meta'],
+				'input_schema'  => $definition['input_schema'],
+				'output_schema' => $definition['output_schema'],
+			);
+		}
+
+		return $catalog;
+	}
+
+	/**
 	 * Build ability definitions and callbacks.
 	 *
 	 * @return array<string,array<string,mixed>>
@@ -183,7 +210,7 @@ class MWPSFE_Abilities {
 				'execute_callback'    => function( $input ) {
 					$input = $this->normalize_ability_input( $input );
 					return $this->normalize_execution_result(
-						$this->operations_service->get_public_operation_contract(
+						MWPSFE_Public_API::instance()->get_public_operation_contract(
 							(int) ( $input['post_id'] ?? 0 ),
 							sanitize_text_field( (string) ( $input['uuid'] ?? '' ) )
 						)

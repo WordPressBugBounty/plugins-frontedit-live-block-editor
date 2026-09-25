@@ -18,6 +18,7 @@
  *     preflightListOperations, executeCurrentListTypeChange, getTrackerForEditor,
  *     getCurrentListElement, getListPathForElement, syncEditorRoot,
  *     isUnsetBlockAttributeValue, normalizeBlockAttributeTrackedValue,
+ *     readAnchorSemanticSettings, materializeAnchorSemanticSettings,
  *     getTextAlignmentCapability, getNormalizedTextAlignmentCapability,
  *     isVirtualBindingBackedTextAlignmentCapability,
  *     isTextAlignmentOperation
@@ -347,7 +348,6 @@
 		const editorOptions = component?.editor && typeof component.editor === 'object'
 			? component.editor
 			: {};
-		const runFormatTokens = getPublicRunFormatTokens(editorOptions);
 		const schemaOperations = Array.isArray(editorOptions.operations)
 			? editorOptions.operations
 			: [];
@@ -367,6 +367,9 @@
 						required: definition?.required === true,
 						type,
 					};
+					if (type === 'scalar' && String(definition?.scalarType || '').trim() === 'boolean') {
+						definitions[name].scalarType = 'boolean';
+					}
 					return definitions;
 				}, {})
 				: {};
@@ -378,10 +381,15 @@
 				publicOperation.values = operation.values.slice();
 			}
 			if (Object.values(inputs).some(input => input.type === 'rich_text_runs')) {
+				const runFormatTokens = getPublicRunFormatTokens(editorOptions, operation);
 				publicOperation.allowedRunFormats = runFormatTokens.slice();
-				const requiredRunFormatAttributes = getPublicRunFormatAttributeRequirements(editorOptions);
+				const requiredRunFormatAttributes = getPublicRunFormatAttributeRequirements(editorOptions, runFormatTokens);
 				if (Object.keys(requiredRunFormatAttributes).length) {
 					publicOperation.requiredRunFormatAttributes = requiredRunFormatAttributes;
+				}
+				const runFormatSettings = getPublicRunFormatSettings(editorOptions, runFormatTokens);
+				if (Object.keys(runFormatSettings).length) {
+					publicOperation.runFormatSettings = runFormatSettings;
 				}
 			}
 			publicOperations.push(publicOperation);
@@ -398,19 +406,25 @@
 	 * to produce a valid rich-text format.
 	 *
 	 * @param   {Object} editorOptions Handler-derived component editor options.
+	 * @param   {Object} operation     Handler-declared rewrite operation.
 	 * @returns {string[]}             Supported public rich-text format tokens.
 	 */
-	function getPublicRunFormatTokens(editorOptions) {
+	function getPublicRunFormatTokens(editorOptions, operation = {}) {
 		const capabilities = editorOptions?.inlineFormatCapabilities;
 		if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
 			return [];
 		}
 
-		return Array.from(new Set(
+		const capabilityTokens = Array.from(new Set(
 			Object.keys(capabilities)
 				.map(token => String(token || '').trim())
 				.filter(Boolean)
 		));
+		const declaredTokens = normalizeStringArray(operation?.runFormats);
+
+		return declaredTokens.length
+			? capabilityTokens.filter(token => declaredTokens.includes(token))
+			: capabilityTokens;
 	}
 
 	/**
@@ -420,10 +434,11 @@
 	 * public run. Rendering tags, optional attributes, bindings, and other
 	 * executor details remain private to FrontEdit.
 	 *
-	 * @param   {Object} editorOptions Handler-derived component editor options.
+	 * @param   {Object}   editorOptions Handler-derived component editor options.
+	 * @param   {string[]} runFormats   Exact format tokens accepted by the operation.
 	 * @returns {Object<string, string[]>} Required attributes keyed by format token.
 	 */
-	function getPublicRunFormatAttributeRequirements(editorOptions) {
+	function getPublicRunFormatAttributeRequirements(editorOptions, runFormats = []) {
 		const capabilities = editorOptions?.inlineFormatCapabilities;
 		if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
 			return {};
@@ -432,10 +447,45 @@
 		return Object.entries(capabilities).reduce((requirements, [rawToken, capability]) => {
 			const token = String(rawToken || '').trim();
 			const attributes = normalizeStringArray(capability?.requiredAttributes);
-			if (token && attributes.length) {
+			if (token && runFormats.includes(token) && attributes.length) {
 				requirements[token] = attributes;
 			}
 			return requirements;
+		}, {});
+	}
+
+	/**
+	 * Project handler-declared semantic settings for public rich-text formats.
+	 *
+	 * Renderer attributes remain private to FrontEdit. Public callers receive
+	 * only the semantic setting names and scalar types declared by the handler.
+	 *
+	 * @param   {Object}   editorOptions Handler-derived component editor options.
+	 * @param   {string[]} runFormats   Exact format tokens accepted by the operation.
+	 * @returns {Object<string, Object<string, {type:string}>>} Settings by format token.
+	 */
+	function getPublicRunFormatSettings(editorOptions, runFormats = []) {
+		const capabilities = editorOptions?.inlineFormatCapabilities;
+		if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+			return {};
+		}
+
+		return Object.entries(capabilities).reduce((settingsByFormat, [rawToken, capability]) => {
+			const token = String(rawToken || '').trim();
+			const settings = capability?.settings && typeof capability.settings === 'object' && !Array.isArray(capability.settings)
+				? Object.entries(capability.settings).reduce((definitions, [rawName, definition]) => {
+					const name = String(rawName || '').trim();
+					const type = String(definition?.type || '').trim().toLowerCase();
+					if (/^[a-z][a-z0-9_]*$/.test(name) && type === 'boolean') {
+						definitions[name] = { type };
+					}
+					return definitions;
+				}, {})
+				: {};
+			if (token && runFormats.includes(token) && Object.keys(settings).length) {
+				settingsByFormat[token] = settings;
+			}
+			return settingsByFormat;
 		}, {});
 	}
 
@@ -468,6 +518,15 @@
 		return {
 			...capability,
 			tag: String(capability.tag || '').trim().toLowerCase(),
+			settings: capability.settings && typeof capability.settings === 'object' && !Array.isArray(capability.settings)
+				? Object.entries(capability.settings).reduce((definitions, [rawName, definition]) => {
+					const name = String(rawName || '').trim();
+					if (/^[a-z][a-z0-9_]*$/.test(name) && String(definition?.type || '').trim().toLowerCase() === 'boolean') {
+						definitions[name] = { type: 'boolean' };
+					}
+					return definitions;
+				}, {})
+				: {},
 			allowedTargets: normalizeStringArray(capability.allowedTargets),
 			allowedRelTokens: normalizeStringArray(capability.allowedRelTokens).map(value => value.toLowerCase()),
 			allowedProtocols: normalizeStringArray(capability.allowedProtocols).map(value => value.toLowerCase()),
@@ -478,61 +537,6 @@
 			allowsAnchorLinks: capability.allowsAnchorLinks !== false,
 			preservesUnknownRelTokens: capability.preservesUnknownRelTokens === true,
 		};
-	}
-
-	/**
-	 * Return whether one candidate attribute payload contains link-like data.
-	 *
-	 * @param   {Object|null} candidateAttributes Candidate link payload.
-	 * @returns {boolean}                        True when link-like keys are present.
-	 */
-	function componentRunAttributesContainLinkData(candidateAttributes) {
-		if (!candidateAttributes || typeof candidateAttributes !== 'object') {
-			return false;
-		}
-
-		if (
-			Object.prototype.hasOwnProperty.call(candidateAttributes, 'href') ||
-			Object.prototype.hasOwnProperty.call(candidateAttributes, 'url') ||
-			Object.prototype.hasOwnProperty.call(candidateAttributes, 'target') ||
-			Object.prototype.hasOwnProperty.call(candidateAttributes, 'rel')
-		) {
-			return true;
-		}
-
-		return Boolean(candidateAttributes.settings && typeof candidateAttributes.settings === 'object');
-	}
-
-	/**
-	 * Resolve one raw per-format link attribute payload.
-	 *
-	 * @param   {Object|null} rawFormatAttributes Raw format attribute map.
-	 * @param   {string}      formatToken         Current link format token.
-	 * @param   {string[]}    linkFormatTokens    Active link format tokens.
-	 * @returns {Object}                          Raw link attribute payload.
-	 */
-	function getComponentRunLinkFormatAttributes(rawFormatAttributes, formatToken, linkFormatTokens) {
-		const source = rawFormatAttributes && typeof rawFormatAttributes === 'object'
-			? rawFormatAttributes
-			: {};
-		const directAttributes = source[formatToken];
-		if (directAttributes && typeof directAttributes === 'object' && !Array.isArray(directAttributes)) {
-			return directAttributes;
-		}
-
-		if (!Array.isArray(linkFormatTokens) || linkFormatTokens.length !== 1) {
-			return {};
-		}
-
-		const misplacedToken = Object.keys(source).find(token => {
-			if (String(token || '').trim() === formatToken) {
-				return false;
-			}
-
-			return componentRunAttributesContainLinkData(source[token]);
-		});
-
-		return misplacedToken ? source[misplacedToken] : {};
 	}
 
 	/**
@@ -554,51 +558,93 @@
 	}
 
 	/**
-	 * Apply one model-facing link settings payload onto raw link attributes.
+	 * Read declared semantic link settings from one anchor's saved attributes.
 	 *
-	 * @param   {Object|null} linkAttributes Current sanitized attributes.
-	 * @param   {Object|null} settings       Model-facing settings payload.
-	 * @param   {Object}      capability     Normalized link capability data.
-	 * @returns {Object}                     Merged link attributes.
+	 * @param   {Element|null} anchorElement Anchor element to inspect.
+	 * @param   {Object}       capability    Normalized anchor capability.
+	 * @returns {Object<string, boolean>}    Declared semantic settings.
 	 */
-	function mergeComponentLinkSettingsIntoAttributes(linkAttributes, settings, capability) {
-		const merged = linkAttributes && typeof linkAttributes === 'object'
-			? { ...linkAttributes }
+	function readAnchorSemanticSettings(anchorElement, capability = {}) {
+		if (!anchorElement || anchorElement.nodeType !== Node.ELEMENT_NODE || String(anchorElement.tagName || '').toLowerCase() !== 'a') {
+			return {};
+		}
+
+		const definitions = capability?.settings && typeof capability.settings === 'object' && !Array.isArray(capability.settings)
+			? capability.settings
 			: {};
-		const source = settings && typeof settings === 'object' ? settings : {};
-
-		if (Object.prototype.hasOwnProperty.call(source, 'new_tab')) {
-			if (source.new_tab && capability.allowedTargets.includes('_blank')) {
-				merged.target = '_blank';
-			} else if (!source.new_tab && merged.target === '_blank') {
-				delete merged.target;
-			}
+		const settings = {};
+		if (definitions.new_tab?.type === 'boolean') {
+			settings.new_tab = String(anchorElement.getAttribute('target') || '').trim().toLowerCase() === '_blank';
+		}
+		if (definitions.no_follow?.type === 'boolean') {
+			settings.no_follow = String(anchorElement.getAttribute('rel') || '')
+				.split(/\s+/)
+				.map(token => token.trim().toLowerCase())
+				.filter(Boolean)
+				.includes('nofollow');
 		}
 
-		if (Object.prototype.hasOwnProperty.call(source, 'no_follow')) {
-			const relTokens = Array.from(new Set(
-				String(merged.rel || '')
-					.split(/\s+/)
-					.map(value => String(value || '').trim().toLowerCase())
-					.filter(Boolean)
-			));
+		return settings;
+	}
 
-			if (source.no_follow && linkCapabilityAllowsRelToken('nofollow', capability)) {
-				relTokens.push('nofollow');
-			} else if (!source.no_follow) {
-				const nextTokens = relTokens.filter(token => token !== 'nofollow');
-				relTokens.length = 0;
-				relTokens.push(...nextTokens);
-			}
+	/**
+	 * Materialize declared semantic link settings onto one anchor element.
+	 *
+	 * The helper owns the private renderer representation shared by native link
+	 * editing and public operations. Unrelated allowed rel tokens are preserved.
+	 *
+	 * @param   {Element|null} anchorElement Anchor element to update.
+	 * @param   {Object|null}  settings      Declared semantic setting values.
+	 * @param   {Object}       capability    Normalized anchor capability.
+	 * @returns {boolean}                    True when the settings were applied.
+	 */
+	function materializeAnchorSemanticSettings(anchorElement, settings, capability = {}) {
+		if (!anchorElement || anchorElement.nodeType !== Node.ELEMENT_NODE || String(anchorElement.tagName || '').toLowerCase() !== 'a') {
+			return false;
+		}
 
-			if (relTokens.length) {
-				merged.rel = Array.from(new Set(relTokens)).join(' ');
+		const definitions = capability?.settings && typeof capability.settings === 'object' && !Array.isArray(capability.settings)
+			? capability.settings
+			: {};
+		const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+		const current = readAnchorSemanticSettings(anchorElement, capability);
+		const newTab = definitions.new_tab?.type === 'boolean'
+			? (typeof source.new_tab === 'boolean' ? source.new_tab : current.new_tab === true)
+			: null;
+		const noFollow = definitions.no_follow?.type === 'boolean'
+			? (typeof source.no_follow === 'boolean' ? source.no_follow : current.no_follow === true)
+			: null;
+
+		if (newTab !== null) {
+			if (newTab && capability.allowedTargets.includes('_blank')) {
+				anchorElement.setAttribute('target', '_blank');
 			} else {
-				delete merged.rel;
+				anchorElement.removeAttribute('target');
 			}
 		}
 
-		return merged;
+		const managedTokens = new Set(['noopener', 'noreferrer', 'nofollow']);
+		const relTokens = String(anchorElement.getAttribute('rel') || '')
+			.split(/\s+/)
+			.map(token => token.trim().toLowerCase())
+			.filter(token => token && !managedTokens.has(token) && linkCapabilityAllowsRelToken(token, capability));
+		if (newTab === true) {
+			['noopener', 'noreferrer'].forEach(token => {
+				if (linkCapabilityAllowsRelToken(token, capability)) relTokens.push(token);
+			});
+		}
+		if (noFollow === true && linkCapabilityAllowsRelToken('nofollow', capability)) {
+			relTokens.push('nofollow');
+		}
+
+		const rel = Array.from(new Set(relTokens)).join(' ');
+		if (rel) {
+			anchorElement.setAttribute('rel', rel);
+		} else {
+			anchorElement.removeAttribute('rel');
+		}
+
+		return true;
 	}
 
 	/**
@@ -643,68 +689,73 @@
 	 * @param   {Object|null} rawFormatAttributes Raw per-format attribute map.
 	 * @param   {string[]}    formats             Active sanitized format tokens.
 	 * @param   {Object}      inlineCapabilities  Available inline format capabilities.
-	 * @returns {Object<string, Object>}          Canonical format-attribute map.
+	 * @returns {Object<string, Object>|null}     Canonical public format attributes, or null when invalid.
 	 */
 	function normalizeComponentRunFormatAttributes(rawFormatAttributes, formats, inlineCapabilities) {
 		const source = rawFormatAttributes && typeof rawFormatAttributes === 'object'
 			? rawFormatAttributes
 			: {};
 		const normalized = {};
-		const linkFormatTokens = Array.from(new Set(
-			(Array.isArray(formats) ? formats : [])
-				.map(value => String(value || '').trim())
-				.filter(token => getInlineLinkCapability(inlineCapabilities, token).tag === 'a')
-		));
+		const formatTokens = Array.isArray(formats) ? formats : [];
+		if (Object.keys(source).some(token => !formatTokens.includes(String(token || '').trim()))) {
+			return null;
+		}
 
-		formats.forEach(formatToken => {
+		for (const formatToken of formatTokens) {
 			const capability = getInlineLinkCapability(inlineCapabilities, formatToken);
 			if (capability.tag !== 'a') {
-				return;
+				if (Object.prototype.hasOwnProperty.call(source, formatToken) && Object.keys(source[formatToken] || {}).length) {
+					return null;
+				}
+				continue;
 			}
 
-			const rawLinkAttributes = getComponentRunLinkFormatAttributes(source, formatToken, linkFormatTokens);
-			if (!rawLinkAttributes || typeof rawLinkAttributes !== 'object') {
-				return;
+			const rawLinkAttributes = source[formatToken];
+			if (!rawLinkAttributes || typeof rawLinkAttributes !== 'object' || Array.isArray(rawLinkAttributes)) {
+				return null;
 			}
 
-			let linkAttributes = {};
-			const href = sanitizeComponentLinkHref(rawLinkAttributes.href || rawLinkAttributes.url || '', capability);
-			if (href) {
+			const publicAttributes = normalizeStringArray(capability.requiredAttributes);
+			const settingNames = Object.keys(capability.settings);
+			const allowedKeys = [ ...publicAttributes, ...(settingNames.length ? ['settings'] : []) ];
+			if (Object.keys(rawLinkAttributes).some(name => !allowedKeys.includes(name))) {
+				return null;
+			}
+
+			const linkAttributes = {};
+			for (const attribute of publicAttributes) {
+				if (attribute !== 'href') {
+					return null;
+				}
+				const href = sanitizeComponentLinkHref(rawLinkAttributes.href || '', capability);
+				if (!href) {
+					return null;
+				}
 				linkAttributes.href = href;
 			}
 
-			const target = String(rawLinkAttributes.target || '').trim();
-			if (!capability.allowedTargets.length || capability.allowedTargets.includes(target)) {
-				if (target) {
-					linkAttributes.target = target;
+			if (settingNames.length) {
+				const rawSettings = rawLinkAttributes.settings;
+				if (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) {
+					return null;
 				}
-			}
-
-			if (rawLinkAttributes.settings && typeof rawLinkAttributes.settings === 'object') {
-				linkAttributes = mergeComponentLinkSettingsIntoAttributes(
-					linkAttributes,
-					rawLinkAttributes.settings,
-					capability
-				);
-			}
-
-			const rel = String(rawLinkAttributes.rel || '').trim();
-			if (rel) {
-				const normalizedRel = Array.from(new Set(
-					rel
-						.split(/\s+/)
-						.map(value => String(value || '').trim().toLowerCase())
-						.filter(token => token && linkCapabilityAllowsRelToken(token, capability))
-				));
-				if (normalizedRel.length) {
-					linkAttributes.rel = normalizedRel.join(' ');
+				if (Object.keys(rawSettings).some(name => !settingNames.includes(name))) {
+					return null;
 				}
+				const settings = {};
+				for (const name of settingNames) {
+					if (capability.settings[name]?.type !== 'boolean' || typeof rawSettings[name] !== 'boolean') {
+						return null;
+					}
+					settings[name] = rawSettings[name];
+				}
+				linkAttributes.settings = settings;
 			}
 
 			if (Object.keys(linkAttributes).length) {
 				normalized[formatToken] = linkAttributes;
 			}
-		});
+		}
 
 		return normalized;
 	}
@@ -721,160 +772,112 @@
 			return [];
 		}
 
-		return rawRuns.reduce((runs, run) => {
+		const normalizedRuns = [];
+		for (const run of rawRuns) {
 			if (!run || typeof run !== 'object' || !Object.prototype.hasOwnProperty.call(run, 'text')) {
-				return runs;
+				return [];
 			}
 
 			const text = String(run.text || '');
-			const formats = Array.isArray(run.formats)
-				? Array.from(new Set(
-					run.formats
-						.map(value => String(value || '').trim())
-						.filter(token => token && Object.prototype.hasOwnProperty.call(inlineCapabilities || {}, token))
-				))
-				: [];
+			if (!Array.isArray(run.formats)) {
+				return [];
+			}
+			const formats = run.formats.map(value => String(value || '').trim());
+			if (
+				formats.some(token => !token || !Object.prototype.hasOwnProperty.call(inlineCapabilities || {}, token)) ||
+				new Set(formats).size !== formats.length
+			) {
+				return [];
+			}
 			const rawFormatAttributes = run.formatAttributes && typeof run.formatAttributes === 'object'
 				? run.formatAttributes
-				: (run.format_attributes && typeof run.format_attributes === 'object'
-					? run.format_attributes
-					: {});
+				: {};
+			if (Array.isArray(rawFormatAttributes)) {
+				return [];
+			}
+			const formatAttributes = normalizeComponentRunFormatAttributes(rawFormatAttributes, formats, inlineCapabilities);
+			if (formatAttributes === null) {
+				return [];
+			}
 
-			runs.push({
+			normalizedRuns.push({
 				text,
 				formats,
-				formatAttributes: normalizeComponentRunFormatAttributes(rawFormatAttributes, formats, inlineCapabilities),
+				formatAttributes,
 			});
+		}
 
-			return runs;
-		}, []);
+		return normalizedRuns;
 	}
 
 	/**
-	 * Read one normalized host-link attribute snapshot from a component element.
+	 * Scope component inline capabilities to one rewrite operation's declared formats.
 	 *
-	 * @param   {Element|null} element Current host element.
-	 * @returns {Object}               Existing host link attributes.
+	 * Toolbar capabilities may include host-level controls that are not legal
+	 * inside a structured text run. The operation declaration is authoritative
+	 * when it provides an exact `runFormats` subset.
+	 *
+	 * @param   {Object} inlineCapabilities Component inline-format capabilities.
+	 * @param   {Object} operation          Resolved schema operation.
+	 * @returns {Object} Capabilities available to this operation.
 	 */
-	function getExistingComponentHostLinkAttributes(element) {
-		if (!element || element.nodeType !== Node.ELEMENT_NODE) {
-			return {};
+	function getComponentOperationInlineCapabilities(inlineCapabilities, operation) {
+		const capabilities = inlineCapabilities && typeof inlineCapabilities === 'object'
+			? inlineCapabilities
+			: {};
+		const declaredFormats = normalizeStringArray(operation?.runFormats);
+		if (!declaredFormats.length) {
+			return capabilities;
 		}
 
-		const href = String(element.getAttribute('href') || '').trim();
-		const target = String(element.getAttribute('target') || '').trim();
-		const rel = String(element.getAttribute('rel') || '').trim();
-		const attributes = {};
-
-		if (href) {
-			attributes.href = href;
-		}
-		if (target) {
-			attributes.target = target;
-		}
-		if (rel) {
-			attributes.rel = rel;
-		}
-
-		return attributes;
+		return Object.fromEntries(
+			Object.entries(capabilities).filter(([token]) => declaredFormats.includes(token))
+		);
 	}
 
 	/**
-	 * Build one canonical host-link attribute payload from an operation input.
+	 * Build one canonical semantic host-link payload from an operation input.
 	 *
 	 * @param   {Object} operationInput Raw operation payload.
 	 * @param   {Object} capability     Normalized link capability data.
-	 * @param   {Object} operation      Resolved schema operation metadata.
-	 * @param   {Element} element       Host component element.
-	 * @returns {Object|null}           Canonical link attributes or null when invalid.
+	 * @returns {Object|null}           Canonical semantic link payload or null when invalid.
 	 */
-	function normalizeComponentHostLinkOperationPayload(operationInput, capability, operation, element) {
-		const payload = operationInput.link && typeof operationInput.link === 'object'
-			? operationInput.link
-			: (operationInput.attributes && typeof operationInput.attributes === 'object' && !Array.isArray(operationInput.attributes)
-				? operationInput.attributes
-				: (operationInput.value && typeof operationInput.value === 'object' && !Array.isArray(operationInput.value)
-					? operationInput.value
-					: operationInput));
-		let nextAttributes = operation?.preserveUnspecifiedAttributes === false
-			? {}
-			: getExistingComponentHostLinkAttributes(element);
-		let didReceivePayload = false;
+	function normalizeComponentHostLinkOperationPayload(operationInput, capability) {
+		const href = sanitizeComponentLinkHref(operationInput.href || '', capability);
+		if (!href) {
+			return null;
+		}
 
-		if (Object.prototype.hasOwnProperty.call(payload, 'href') || Object.prototype.hasOwnProperty.call(payload, 'url')) {
-			didReceivePayload = true;
-			const href = sanitizeComponentLinkHref(payload.href || payload.url || '', capability);
-			if (href) {
-				nextAttributes.href = href;
-			} else {
-				delete nextAttributes.href;
+		const settings = {};
+		if (Object.prototype.hasOwnProperty.call(operationInput, 'new_tab')) {
+			if (typeof operationInput.new_tab !== 'boolean') {
+				return null;
 			}
+			settings.new_tab = operationInput.new_tab;
 		}
-
-		if (Object.prototype.hasOwnProperty.call(payload, 'target') || Object.prototype.hasOwnProperty.call(payload, 'linkTarget')) {
-			didReceivePayload = true;
-			const target = String(payload.target || payload.linkTarget || '').trim();
-			if (!target) {
-				delete nextAttributes.target;
-			} else if (!capability.allowedTargets.length || capability.allowedTargets.includes(target)) {
-				nextAttributes.target = target;
+		if (Object.prototype.hasOwnProperty.call(operationInput, 'no_follow')) {
+			if (typeof operationInput.no_follow !== 'boolean') {
+				return null;
 			}
+			settings.no_follow = operationInput.no_follow;
 		}
-
-		if (Object.prototype.hasOwnProperty.call(payload, 'rel')) {
-			didReceivePayload = true;
-			const rel = String(payload.rel || '').trim();
-			if (!rel) {
-				delete nextAttributes.rel;
-			} else {
-				const normalizedRel = Array.from(new Set(
-					rel
-						.split(/\s+/)
-						.map(value => String(value || '').trim().toLowerCase())
-						.filter(token => token && linkCapabilityAllowsRelToken(token, capability))
-				));
-				if (normalizedRel.length) {
-					nextAttributes.rel = normalizedRel.join(' ');
-				} else {
-					delete nextAttributes.rel;
-				}
-			}
-		}
-
-		const settings = payload.settings && typeof payload.settings === 'object'
-			? { ...payload.settings }
-			: {};
-		if (Object.prototype.hasOwnProperty.call(payload, 'new_tab')) {
-			settings.new_tab = payload.new_tab;
-			didReceivePayload = true;
-		}
-		if (Object.prototype.hasOwnProperty.call(payload, 'no_follow')) {
-			settings.no_follow = payload.no_follow;
-			didReceivePayload = true;
-		}
-		if (Object.keys(settings).length) {
-			didReceivePayload = true;
-			nextAttributes = mergeComponentLinkSettingsIntoAttributes(nextAttributes, settings, capability);
-		}
-
-		return didReceivePayload ? nextAttributes : null;
+		return { href, settings };
 	}
 
 	/**
 	 * Apply one normalized host-link attribute payload to a component element.
 	 *
 	 * @param   {Element|null} element        Host component element.
-	 * @param   {Object}       linkAttributes Canonical link attributes.
+	 * @param   {Object}       linkPayload    Canonical semantic link payload.
+	 * @param   {Object}       capability     Normalized anchor capability.
 	 * @returns {boolean}                    True when the mutation applied.
 	 */
-	function applyComponentHostLinkAttributes(element, linkAttributes) {
-		if (!element || element.nodeType !== Node.ELEMENT_NODE || !linkAttributes || typeof linkAttributes !== 'object') {
+	function applyComponentHostLinkAttributes(element, linkPayload, capability) {
+		if (!element || element.nodeType !== Node.ELEMENT_NODE || !linkPayload || typeof linkPayload !== 'object') {
 			return false;
 		}
 
-		const href = String(linkAttributes.href || '').trim();
-		const target = String(linkAttributes.target || '').trim();
-		const rel = String(linkAttributes.rel || '').trim();
+		const href = String(linkPayload.href || '').trim();
 
 		if (href) {
 			element.setAttribute('href', href);
@@ -885,19 +888,7 @@
 			element.removeAttribute('href');
 		}
 
-		if (target) {
-			element.setAttribute('target', target);
-		} else {
-			element.removeAttribute('target');
-		}
-
-		if (rel) {
-			element.setAttribute('rel', rel);
-		} else {
-			element.removeAttribute('rel');
-		}
-
-		return true;
+		return materializeAnchorSemanticSettings(element, linkPayload.settings || {}, capability);
 	}
 
 	/**
@@ -953,7 +944,8 @@
 	 * @returns {HTMLElement|null}               Wrapper element.
 	 */
 	function buildComponentFormatWrapper(inlineCapabilities, formatToken, formatAttributes = null) {
-		const tagName = String(inlineCapabilities?.[formatToken]?.tag || '').trim().toLowerCase();
+		const capability = getInlineLinkCapability(inlineCapabilities, formatToken);
+		const tagName = capability.tag;
 		if (!tagName) {
 			return null;
 		}
@@ -965,15 +957,8 @@
 				element.setAttribute('href', href);
 			}
 
-			const target = String(formatAttributes.target || '').trim();
-			if (target) {
-				element.setAttribute('target', target);
-			}
 
-			const rel = String(formatAttributes.rel || '').trim();
-			if (rel) {
-				element.setAttribute('rel', rel);
-			}
+			materializeAnchorSemanticSettings(element, formatAttributes.settings || {}, capability);
 		}
 
 		return element;
@@ -985,7 +970,7 @@
 	 * @param   {Array<Object>} runs               Structured text runs.
 	 * @param   {Object}       inlineCapabilities  Available inline format capabilities.
 	 * @param   {Element|null} hostElement         Live host element.
-	 * @returns {{runs:Array<Object>,hostAttributes:Object}} Hoisted run data.
+	 * @returns {{runs:Array<Object>,hostAttributes:Object,hostCapability:Object|null}} Hoisted run data.
 	 */
 	function hoistComponentHostLevelFormats(runs, inlineCapabilities, hostElement = null) {
 		const hostTagName = getComponentHostTagName(hostElement);
@@ -993,10 +978,12 @@
 			return {
 				runs: Array.isArray(runs) ? runs : [],
 				hostAttributes: {},
+				hostCapability: null,
 			};
 		}
 
 		const hostAttributes = {};
+		let hostCapability = null;
 		const normalizedRuns = (Array.isArray(runs) ? runs : []).map(run => {
 			const formats = Array.isArray(run?.formats) ? run.formats : [];
 			const formatAttributes = run?.formatAttributes && typeof run.formatAttributes === 'object'
@@ -1014,6 +1001,7 @@
 				const attributes = formatAttributes?.[formatToken];
 				if (attributes && typeof attributes === 'object' && !Array.isArray(attributes)) {
 					Object.assign(hostAttributes, attributes);
+					hostCapability = getInlineLinkCapability(inlineCapabilities, formatToken);
 				}
 				delete formatAttributes[formatToken];
 			});
@@ -1028,6 +1016,7 @@
 		return {
 			runs: normalizedRuns,
 			hostAttributes,
+			hostCapability,
 		};
 	}
 
@@ -1036,25 +1025,25 @@
 	 *
 	 * @param   {Element|null} hostElement    Live host element.
 	 * @param   {Object|null}  hostAttributes Hoisted host attributes.
+	 * @param   {Object|null}  capability     Hoisted anchor capability.
 	 * @returns {void}
 	 */
-	function applyComponentHostLevelFormatAttributes(hostElement, hostAttributes = null) {
+	function applyComponentHostLevelFormatAttributes(hostElement, hostAttributes = null, capability = null) {
 		if (!hostElement || typeof hostElement.setAttribute !== 'function' || typeof hostElement.removeAttribute !== 'function') {
+			return;
+		}
+		if (capability?.tag !== 'a') {
 			return;
 		}
 
 		const attributes = hostAttributes && typeof hostAttributes === 'object' ? hostAttributes : {};
-		['href', 'target', 'rel'].forEach(attributeName => {
-			const value = typeof attributes[attributeName] === 'string'
-				? attributes[attributeName].trim()
-				: '';
-			if (value) {
-				hostElement.setAttribute(attributeName, value);
-				return;
-			}
-
-			hostElement.removeAttribute(attributeName);
-		});
+		const href = typeof attributes.href === 'string' ? attributes.href.trim() : '';
+		if (href) {
+			hostElement.setAttribute('href', href);
+		} else {
+			hostElement.removeAttribute('href');
+		}
+		materializeAnchorSemanticSettings(hostElement, attributes.settings || {}, capability);
 	}
 
 	/**
@@ -1064,7 +1053,7 @@
 	 * @param   {Object}       inlineCapabilities  Available inline format capabilities.
 	 * @param   {Object}       editorOptions       Runtime editor options.
 	 * @param   {Element|null} hostElement         Live host element.
-	 * @returns {{html:string,hostAttributes:Object}} Rendered HTML and host attrs.
+	 * @returns {{html:string,hostAttributes:Object,hostCapability:Object|null}} Rendered HTML and host attrs.
 	 */
 	function buildComponentHtmlFromRuns(runs, inlineCapabilities, editorOptions = {}, hostElement = null) {
 		const container = document.createElement('div');
@@ -1116,6 +1105,7 @@
 		return {
 			html: container.innerHTML,
 			hostAttributes: hoisted.hostAttributes,
+			hostCapability: hoisted.hostCapability,
 		};
 	}
 
@@ -1237,7 +1227,7 @@
 				return;
 			}
 
-			const inlineCapabilities = (
+			const componentInlineCapabilities = (
 				component.editorOptions?.inlineFormatCapabilities &&
 				typeof component.editorOptions.inlineFormatCapabilities === 'object'
 			)
@@ -1245,22 +1235,21 @@
 				: {};
 			if (operation.kind === 'link_change') {
 				const formatToken = String(operation.format || operationInput.format || '').trim();
-				const capability = getInlineLinkCapability(inlineCapabilities, formatToken);
+				const capability = getInlineLinkCapability(componentInlineCapabilities, formatToken);
 				const hostTagName = String(component.element?.tagName || '').trim().toLowerCase();
 				if (capability.tag !== 'a' || hostTagName !== capability.tag) {
 					return;
 				}
 
-				const linkAttributes = normalizeComponentHostLinkOperationPayload(
-					operationInput,
-					capability,
-					operation,
-					component.element
-				);
-				if (!linkAttributes || !applyComponentHostLinkAttributes(component.element, linkAttributes)) {
+				const linkAttributes = normalizeComponentHostLinkOperationPayload(operationInput, capability);
+				if (!linkAttributes || !applyComponentHostLinkAttributes(component.element, linkAttributes, capability)) {
 					return;
 				}
 			} else {
+				const inlineCapabilities = getComponentOperationInlineCapabilities(
+					componentInlineCapabilities,
+					operation
+				);
 				const bindingSource = String(
 					operationInput.bindingSource ||
 					component?.bindingSource ||
@@ -1281,7 +1270,7 @@
 					inlineCapabilities
 				);
 				const hasReplacementPayload = hasDirectTextPayload || Array.isArray(operationInput.runs) || Array.isArray(operationInput.lines);
-				if (!hasReplacementPayload) {
+				if (!hasReplacementPayload || (!hasDirectTextPayload && runs.length !== rawRuns.length)) {
 					return;
 				}
 
@@ -1297,7 +1286,11 @@
 						component.element
 					);
 					component.element.innerHTML = rendered.html;
-					applyComponentHostLevelFormatAttributes(component.element, rendered.hostAttributes);
+					applyComponentHostLevelFormatAttributes(
+						component.element,
+						rendered.hostAttributes,
+						rendered.hostCapability
+					);
 				}
 			}
 
@@ -1390,27 +1383,33 @@
 				const formatToken = String(operation.format || operationInput.format || '').trim();
 				const capability = getInlineLinkCapability(component.editorOptions?.inlineFormatCapabilities || {}, formatToken);
 				const hostTagName = String(component.element?.tagName || '').trim().toLowerCase();
-				const attributes = normalizeComponentHostLinkOperationPayload(
-					operationInput,
-					capability,
-					operation,
-					component.element
-				);
+				const attributes = normalizeComponentHostLinkOperationPayload(operationInput, capability);
 				if (capability.tag !== 'a' || hostTagName !== capability.tag || !attributes) {
 					errors.push({ code: 'component_link_operation_invalid', index, componentId });
 					return;
 				}
 			} else {
+				const inlineCapabilities = getComponentOperationInlineCapabilities(
+					component.editorOptions?.inlineFormatCapabilities || {},
+					operation
+				);
 				const bindingSource = String(operationInput.bindingSource || component.bindingSource || '').trim().toLowerCase();
 				const rawRuns = Array.isArray(operationInput.runs)
 					? operationInput.runs
 					: flattenComponentLineRuns(operationInput.lines);
 				const hasDirectTextPayload = Object.prototype.hasOwnProperty.call(operationInput, 'text');
 				const hasReplacementPayload = hasDirectTextPayload || Array.isArray(operationInput.runs) || Array.isArray(operationInput.lines);
+				const runs = normalizeComponentRuns(
+					hasDirectTextPayload && bindingSource === 'plaintext' && !rawRuns.length
+						? [ { text: String(operationInput.text || ''), formats: [], formatAttributes: {} } ]
+						: rawRuns,
+					inlineCapabilities
+				);
 				if (
 					(bindingSource !== 'html' && bindingSource !== 'plaintext') ||
 					!hasReplacementPayload ||
-					(!hasDirectTextPayload && !rawRuns.length)
+					(!hasDirectTextPayload && !rawRuns.length) ||
+					(!hasDirectTextPayload && runs.length !== rawRuns.length)
 				) {
 					errors.push({ code: 'component_content_operation_invalid', index, componentId });
 					return;
@@ -1528,6 +1527,15 @@
 			if (!url) {
 				return;
 			}
+			const icon = component.mediaDescriptor.mediaType === 'icon'
+				? (SFE.MediaLibraryCache?.get('icon')?.items || []).find(item => item.name === url)
+				: null;
+			if (component.mediaDescriptor.mediaType === 'icon' && (
+				!icon || !Array.isArray(operation.values) || !operation.values.includes(url) ||
+				payload?.attachmentId != null || payload?.attachment_id != null
+			)) {
+				return;
+			}
 
 			const attachmentId = Object.prototype.hasOwnProperty.call(payload, 'attachmentId')
 				? payload.attachmentId
@@ -1543,6 +1551,8 @@
 				: 'input';
 			const didApply = editorHost.applyMediaSelection(url, attachmentId, {
 				fromState: source,
+				markup: icon ? String(icon.content || '') : '',
+				saveHistory: options.saveHistory !== false,
 			});
 			if (didApply === false) {
 				return;
@@ -1590,6 +1600,7 @@
 	function preflightMediaOperations(options = {}) {
 		const editorState = options.editorState || null;
 		const editorHost = options.editorHost || null;
+		const allowInactiveComponents = options.allowInactiveComponents === true;
 		const componentMap = getActiveEditorComponentMap(editorState);
 		const inputOperations = Array.isArray(options.operations)
 			? options.operations
@@ -1604,8 +1615,10 @@
 
 		if (
 			!editorState ||
-			!editorHost ||
-			typeof editorHost.applyMediaSelection !== 'function' ||
+			(
+				!allowInactiveComponents &&
+				(!editorHost || typeof editorHost.applyMediaSelection !== 'function')
+			) ||
 			!Object.keys(componentMap).length ||
 			!inputOperations.length
 		) {
@@ -1636,8 +1649,20 @@
 				!component?.element ||
 				!component?.mediaDescriptor ||
 				!url ||
-				(activeComponentId && activeComponentId !== componentId) ||
-				(!activeComponentId && editorHost.element && editorHost.element !== component.element)
+				(component.mediaDescriptor.mediaType === 'icon' && (
+					!Array.isArray(operation.values) ||
+					!operation.values.includes(url) ||
+					payload?.attachmentId != null ||
+					payload?.attachment_id != null ||
+					!(SFE.MediaLibraryCache?.get('icon')?.items || []).some(item => item.name === url)
+				)) ||
+				(
+					!allowInactiveComponents &&
+					(
+						(activeComponentId && activeComponentId !== componentId) ||
+						(!activeComponentId && editorHost.element && editorHost.element !== component.element)
+					)
+				)
 			) {
 				errors.push({ code: 'media_operation_invalid', index, componentId });
 				return;
@@ -1815,7 +1840,10 @@
 			};
 		}
 
-		if (kind === 'block_attribute_change' && resolveBlockAttributeOperation(editorHost, executableOperation)) {
+		if (
+			kind === 'block_attribute_change' &&
+			resolveBlockAttributeOperation(editorHost, executableOperation, editorState)
+		) {
 			return {
 				executor: 'block_attribute',
 				operation: executableOperation,
@@ -1826,6 +1854,7 @@
 			const mediaOperation = {
 				...executableOperation,
 				kind: 'replace_component_media',
+				values: Array.isArray(declaredOperation.values) ? declaredOperation.values.slice() : [],
 			};
 			if (resolveMediaOperation(editorState, mediaOperation)) {
 				return {
@@ -1900,6 +1929,7 @@
 			{
 				operations: plan.blockAttributeOperations,
 				preflight: () => preflightBlockAttributeOperations({
+					editorState,
 					editorHost,
 					operations: plan.blockAttributeOperations,
 				}),
@@ -1910,6 +1940,7 @@
 					editorState,
 					editorHost,
 					operations: plan.mediaOperations,
+					allowInactiveComponents: options.allowInactiveComponents === true,
 				}),
 			},
 		];
@@ -1922,7 +1953,18 @@
 			if (result?.valid === true) {
 				return;
 			}
-			group.operations.forEach(operation => {
+			// Component/media preflight errors carry indexes relative to their
+			// executor group. Preserve that attribution so one malformed operation
+			// does not make valid siblings appear invalid to public integrations.
+			const invalidIndexes = Array.from(new Set(
+				(Array.isArray(result?.errors) ? result.errors : [])
+					.map(error => Number(error?.index))
+					.filter(index => Number.isInteger(index) && index >= 0 && index < group.operations.length)
+			));
+			const invalidOperations = invalidIndexes.length
+				? invalidIndexes.map(index => group.operations[index])
+				: group.operations;
+			invalidOperations.forEach(operation => {
 				plan.errors.push({
 					code: 'operation_invalid',
 					id: String(operation.id || '').trim(),
@@ -1975,6 +2017,7 @@
 		}
 		if (plan.blockAttributeOperations.length) {
 			results.push(executeBlockAttributeOperations({
+				editorState: plan.editorState,
 				editorHost: plan.editorHost,
 				operations: plan.blockAttributeOperations,
 				saveHistory: false,
@@ -1985,6 +2028,7 @@
 				editorState: plan.editorState,
 				editorHost: plan.editorHost,
 				operations: plan.mediaOperations,
+				saveHistory: false,
 			}));
 		}
 
@@ -2553,29 +2597,43 @@
 	/**
 	 * Resolve one schema block-attribute operation from executor options.
 	 *
-	 * @param   {Object|null} editorHost Active schema editor host.
-	 * @param   {Object}      options   Executor options.
-	 * @returns {Object|null}           Matching block-attribute operation.
+	 * @param   {Object|null} editorHost  Active schema editor host.
+	 * @param   {Object}      options     Executor options.
+	 * @param   {Object|null} editorState Active editor state used to resolve the
+	 *                                    operation from its target component.
+	 * @returns {Object|null} Matching block-attribute operation.
 	 */
-	function resolveBlockAttributeOperation(editorHost, options = {}) {
-		if (options.operation && typeof options.operation === 'object') {
-			const suppliedOperation = options.operation;
-			// A caller may name an operation, but cannot supply a mutable operation
-			// definition. Resolve every field from the active handler schema.
-			const suppliedOperationId = String(
-				suppliedOperation.id || suppliedOperation.operationId || ''
-			).trim();
-			if (suppliedOperationId) {
-				return getEditorOperations(editorHost).find(operation => (
-					String(operation?.id || '').trim() === suppliedOperationId &&
-					String(operation?.kind || '').trim() === 'block_attribute_change'
-				)) || null;
-			}
-		}
-
-		const operationId = String(options.operationId || options.id || '').trim();
+	function resolveBlockAttributeOperation(editorHost, options = {}, editorState = null) {
+		const suppliedOperation = options.operation && typeof options.operation === 'object'
+			? options.operation
+			: options;
+		// A caller may name an operation, but cannot supply a mutable operation
+		// definition. Resolve every field from the live handler schema.
+		const operationId = String(
+			suppliedOperation.id || suppliedOperation.operationId || ''
+		).trim();
 		if (!operationId) {
 			return null;
+		}
+
+		const componentId = String(
+			suppliedOperation.componentId ||
+			suppliedOperation.component ||
+			suppliedOperation.component_id ||
+			''
+		).trim();
+		const component = componentId
+			? getActiveEditorComponentMap(editorState)[componentId] || null
+			: null;
+		const componentOperations = Array.isArray(component?.editorOptions?.operations)
+			? component.editorOptions.operations
+			: [];
+		const componentOperation = componentOperations.find(operation => (
+			String(operation?.id || '').trim() === operationId &&
+			String(operation?.kind || '').trim() === 'block_attribute_change'
+		)) || null;
+		if (componentOperation) {
+			return componentOperation;
 		}
 
 		return getEditorOperations(editorHost).find(operation => (
@@ -3092,6 +3150,12 @@
 		const type = String(definition?.type || '').trim();
 
 		if (type === 'scalar') {
+			if (String(definition?.scalarType || '').trim() === 'boolean') {
+				return {
+					valid: typeof value === 'boolean',
+					value,
+				};
+			}
 			const isScalar = value === null || ['string', 'number', 'boolean'].includes(typeof value);
 			return {
 				valid: isScalar,
@@ -3210,6 +3274,7 @@
 	 * @returns {Object|null}    Applied-operation summary.
 	 */
 	function executeBlockAttributeOperations(options = {}) {
+		const editorState = options.editorState || null;
 		const editorHost = options.editorHost || null;
 		const inputOperations = Array.isArray(options.operations)
 			? options.operations
@@ -3223,7 +3288,7 @@
 				)
 					? inputOperation
 					: {};
-				const operation = resolveBlockAttributeOperation(editorHost, operationOptions);
+				const operation = resolveBlockAttributeOperation(editorHost, operationOptions, editorState);
 				if (!operation) {
 					return null;
 				}
@@ -3331,6 +3396,7 @@
 	 * @returns {{valid:boolean, validatedOperationIds:string[], errors:Object[]}} Preflight summary.
 	 */
 	function preflightBlockAttributeOperations(options = {}) {
+		const editorState = options.editorState || null;
 		const editorHost = options.editorHost || null;
 		const inputOperations = Array.isArray(options.operations)
 			? options.operations
@@ -3350,7 +3416,9 @@
 			const operationOptions = inputOperation && typeof inputOperation === 'object' && !Array.isArray(inputOperation)
 				? inputOperation
 				: null;
-			const operation = operationOptions ? resolveBlockAttributeOperation(editorHost, operationOptions) : null;
+			const operation = operationOptions
+				? resolveBlockAttributeOperation(editorHost, operationOptions, editorState)
+				: null;
 			const inputResult = operationOptions
 				? normalizeBlockAttributeOperationInputs(operation, operationOptions)
 				: { valid: false };
@@ -3623,6 +3691,8 @@
 		preflightPublicOperations,
 		executePublicOperations,
 		getPublicComponentOperations,
+		readAnchorSemanticSettings,
+		materializeAnchorSemanticSettings,
 		getPublicListOperationContract,
 		executeListOperations,
 		preflightListOperations,

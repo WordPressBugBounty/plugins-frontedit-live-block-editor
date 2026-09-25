@@ -540,6 +540,10 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 				'tag'                       => 'a',
 				'attributes'                => array( 'href', 'target', 'rel' ),
 				'requiredAttributes'        => array( 'href' ),
+				'settings'                  => array(
+					'new_tab'   => array( 'type' => 'boolean' ),
+					'no_follow' => array( 'type' => 'boolean' ),
+				),
 				'allowedTargets'            => array( '_blank' ),
 				'allowedRelTokens'          => array( 'nofollow', 'noopener', 'noreferrer' ),
 				'allowedProtocols'          => array( 'http', 'https', 'mailto', 'tel' ),
@@ -552,6 +556,10 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 				'tag'                       => 'a',
 				'attributes'                => array( 'href', 'target', 'rel' ),
 				'requiredAttributes'        => array( 'href' ),
+				'settings'                  => array(
+					'new_tab'   => array( 'type' => 'boolean' ),
+					'no_follow' => array( 'type' => 'boolean' ),
+				),
 				'allowedTargets'            => array( '_blank' ),
 				'allowedRelTokens'          => array( 'nofollow', 'noopener', 'noreferrer' ),
 				'allowedProtocols'          => array( 'http', 'https', 'mailto', 'tel' ),
@@ -607,15 +615,16 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 	 *
 	 * @param string $component_id     Component ID that owns the text surface.
 	 * @param bool   $public_operation Whether this operation is available to public integrations.
+	 * @param array  $run_formats      Optional exact inline-format tokens accepted by this rewrite.
 	 * @return array<string, mixed>
 	 */
-	protected function get_editor_text_rewrite_operation( $component_id, $public_operation = true ) {
+	protected function get_editor_text_rewrite_operation( $component_id, $public_operation = true, $run_formats = array() ) {
 		$component_id = trim( (string) $component_id );
 		if ( '' === $component_id ) {
 			return array();
 		}
 
-		return array(
+		$operation = array(
 			'id'              => 'rewrite_text',
 			'kind'            => 'text_rewrite',
 			'component'       => $component_id,
@@ -629,6 +638,25 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 			'preserveInlineFormatting' => true,
 			'preserveUnchangedText'  => true,
 		);
+
+		$normalized_run_formats = array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static function( $format ) {
+							$format = trim( (string) $format );
+							return 1 === preg_match( '/^[A-Za-z][A-Za-z0-9_-]*$/', $format ) ? $format : '';
+						},
+						(array) $run_formats
+					)
+				)
+			)
+		);
+		if ( ! empty( $normalized_run_formats ) ) {
+			$operation['runFormats'] = $normalized_run_formats;
+		}
+
+		return $operation;
 	}
 
 	/**
@@ -806,12 +834,14 @@ abstract class MWPSFE_Abstract_Edit_Handler implements MWPSFE_Handler_Interface 
 					'type'     => 'url',
 				),
 				'new_tab' => array(
-					'required' => false,
-					'type'     => 'scalar',
+					'required'   => false,
+					'type'       => 'scalar',
+					'scalarType' => 'boolean',
 				),
 				'no_follow' => array(
-					'required' => false,
-					'type'     => 'scalar',
+					'required'   => false,
+					'type'       => 'scalar',
+					'scalarType' => 'boolean',
 				),
 			),
 			'targetModes'                   => array( 'host' ),
@@ -1133,13 +1163,14 @@ interface MWPSFE_Schema_Handler_Interface {
 	 * - operations (array<int, array>)
 	 *
 	 * inlineFormatCapabilities maps an inline format token to the canonical tag
-	 * and supported link semantics that format produces so external tooling can
-	 * emit schema-compatible markup without handler-specific knowledge.
+	 * and supported link semantics that format produces so public integrations
+	 * can emit semantic runs without handler-specific renderer knowledge.
 	 *
 	 * Supported inline capability keys:
 	 * - tag (string): canonical HTML tag used by the inline format.
 	 * - attributes (array<string>): supported HTML attributes for the format tag.
 	 * - requiredAttributes (array<string>): attributes that must be present.
+	 * - settings (array<string,array{type:string}>): public semantic settings.
 	 * - allowedTargets (array<string>): supported target attribute values.
 	 * - allowedRelTokens (array<string>): rel tokens directly managed by the UI.
 	 * - allowedProtocols (array<string>): supported absolute URL schemes.
@@ -2948,7 +2979,7 @@ class MWPSFE_Handler_Core_Button extends MWPSFE_Abstract_Text_Edit_Handler imple
 						'operations'               => $this->normalize_editor_operations(
 							array(
 								$this->get_editor_block_attribute_change_operation( 'set_text_align', 'label', $attribute_capabilities['textAlignment'] ),
-								$this->get_editor_text_rewrite_operation( 'label' ),
+								$this->get_editor_text_rewrite_operation( 'label', true, array( 'bold', 'italic', 'strikethrough' ) ),
 								$this->get_editor_inline_format_change_operation( 'label', array( 'bold', 'italic', 'strikethrough' ) ),
 								$this->get_editor_link_change_operation( 'set_button_link', 'label', 'buttonLink', $inline_format_capabilities ),
 							)
@@ -3636,6 +3667,11 @@ class MWPSFE_Handler_Core_Icon extends MWPSFE_Abstract_Schema_Media_Edit_Handler
 			'unsetValue' => 'none',
 		);
 
+		$icon_names             = array_column( \WP_Icons_Registry::get_instance()->get_registered_icons(), 'name' );
+		$replace_icon_operation = $this->get_editor_media_replace_operation( 'icon' );
+		unset( $replace_icon_operation['inputs']['attachmentId'] );
+		$replace_icon_operation['values'] = $icon_names;
+
 		return array(
 			'version' => 1,
 			'block'   => array(
@@ -3678,7 +3714,7 @@ class MWPSFE_Handler_Core_Icon extends MWPSFE_Abstract_Schema_Media_Edit_Handler
 						),
 						'operations' => $this->normalize_editor_operations(
 							array(
-								$this->get_editor_media_replace_operation( 'icon' ),
+								$replace_icon_operation,
 								$this->get_editor_block_attribute_change_operation( 'set_align', 'icon', $align_attribute_capability ),
 							)
 						),

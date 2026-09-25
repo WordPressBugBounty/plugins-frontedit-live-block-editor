@@ -84,12 +84,25 @@
 		const allowedTargets = normalizeStringArray(rawCapability.allowedTargets);
 		const allowedRelTokens = normalizeStringArray(rawCapability.allowedRelTokens);
 		const allowedProtocols = normalizeStringArray(rawCapability.allowedProtocols);
+		const settings = rawCapability.settings && typeof rawCapability.settings === 'object' && !Array.isArray(rawCapability.settings)
+			? Object.entries(rawCapability.settings).reduce((definitions, [rawName, rawDefinition]) => {
+				const name = typeof rawName === 'string' ? rawName.trim() : '';
+				const type = rawDefinition && typeof rawDefinition === 'object' && !Array.isArray(rawDefinition) && typeof rawDefinition.type === 'string'
+					? rawDefinition.type.trim().toLowerCase()
+					: '';
+				if (/^[a-z][a-z0-9_]*$/.test(name) && type === 'boolean') {
+					definitions[name] = { type };
+				}
+				return definitions;
+			}, {})
+			: null;
 
 		if (attributes) normalized.attributes = attributes;
 		if (requiredAttributes) normalized.requiredAttributes = requiredAttributes;
 		if (allowedTargets) normalized.allowedTargets = allowedTargets;
 		if (allowedRelTokens) normalized.allowedRelTokens = allowedRelTokens;
 		if (allowedProtocols) normalized.allowedProtocols = allowedProtocols;
+		if (settings && Object.keys(settings).length) normalized.settings = settings;
 
 		if (typeof rawCapability.allowsRelativeUrls === 'boolean') {
 			normalized.allowsRelativeUrls = rawCapability.allowsRelativeUrls;
@@ -274,6 +287,12 @@
 				required: rawDefinition.required === true,
 				type,
 			};
+			const scalarType = type === 'scalar' && typeof rawDefinition.scalarType === 'string'
+				? rawDefinition.scalarType.trim().toLowerCase()
+				: '';
+			if (scalarType === 'boolean') {
+				normalized[inputName].scalarType = scalarType;
+			}
 		});
 
 		return Object.keys(normalized).length ? normalized : null;
@@ -296,6 +315,7 @@
 		const format = typeof rawOperation.format === 'string' ? rawOperation.format.trim() : '';
 		const attributes = normalizeEditorOperationStringArray(rawOperation.attributes);
 		const formats = normalizeEditorOperationStringArray(rawOperation.formats);
+		const runFormats = normalizeEditorOperationStringArray(rawOperation.runFormats);
 		const targetModes = normalizeEditorOperationStringArray(rawOperation.targetModes);
 		const values = normalizeEditorOperationValues(rawOperation.values);
 		const inputs = normalizeEditorOperationInputs(rawOperation.inputs);
@@ -323,6 +343,9 @@
 		}
 		if (formats) {
 			normalized.formats = formats;
+		}
+		if (runFormats) {
+			normalized.runFormats = runFormats;
 		}
 		if (targetModes) {
 			normalized.targetModes = targetModes;

@@ -13,7 +13,8 @@
  *   SFE.LifecycleHelpers  - .createFadeHandler, .setupDraftPreviewLifecycle
  *   SFE.handleInlineSave  - set by SaveManager
  *   SFE.closeDraftPreview - set by DraftManager
- *   SFE.ManagerData       - .iconLibraryUrl, .mediaLibraryUrl, .restBase,
+ *   SFE.PublicApi         - .getIconLibrary
+ *   SFE.ManagerData       - .mediaLibraryUrl, .restBase,
  *                           .restUrl, .nonce, .postId
  *
  * Exposes: SFE.MediaEditor  { startMediaEditing, startSchemaComponentEditing }
@@ -874,20 +875,7 @@
 		}
 
 		try {
-			const iconLibraryUrl = String(SFE.ManagerData.iconLibraryUrl || '').trim();
-			if (!iconLibraryUrl) {
-				throw new Error('Icon Library URL is not configured.');
-			}
-			const iconLibraryRequestUrl = new URL(iconLibraryUrl, window.location.href);
-			iconLibraryRequestUrl.searchParams.set('context', 'view');
-			const response = await fetch(iconLibraryRequestUrl.toString(), {
-				headers: { 'X-WP-Nonce': SFE.ManagerData.nonce },
-			});
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}`);
-			}
-			const icons = await response.json();
-			mediaLibraryCache?.set('icon', { items: icons });
+			const icons = await SFE.PublicApi.getIconLibrary();
 			renderIcons(icons);
 		} catch (error) {
 			console.error('FrontEdit: failed to load the Icon Library', error);
@@ -1285,7 +1273,7 @@
 			repositionAfterMediaLoad(mediaEl, getRootElement(), toolbarContainer, actionsContainer, positionFloatingElements);
 		};
 
-		const applyMediaChange = (url, attachmentId, markup = '') => {
+		const applyMediaChange = (url, attachmentId, markup = '', options = {}) => {
 			uploadState.url          = url;
 			uploadState.attachmentId = attachmentId;
 
@@ -1310,7 +1298,9 @@
 			}
 
 			if (toolbarHost) {
-				toolbarHost.saveToHistory();
+				if (options.saveHistory !== false) {
+					toolbarHost.saveToHistory();
+				}
 				toolbarHost.updateToolbarState();
 			}
 
@@ -1324,7 +1314,9 @@
 					return false;
 				}
 
-				applyMediaChange(normalizedUrl, attachmentId);
+			applyMediaChange(normalizedUrl, attachmentId, options.markup || '', {
+					saveHistory: options.saveHistory !== false,
+				});
 				restoreInlineEditButtons(editorState);
 				currentState = 'idle';
 				requestAnimationFrame(reposition);

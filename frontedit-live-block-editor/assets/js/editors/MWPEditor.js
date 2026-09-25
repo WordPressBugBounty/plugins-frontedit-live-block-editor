@@ -1,6 +1,7 @@
 /**
  * Rich text editor core used by frontend inline editing.
  *
+ * Reads: SFE.SchemaOperationExecutor - semantic anchor setting helpers.
  * Exposes: SFE.MWPEditor
  */
 
@@ -1001,6 +1002,7 @@ class MWPEditor {
 		this._updateToolbarHandler = null;
 		this._interactiveSpaceKeydownHandler = null;
 		this._contextMenuHandler = null;
+		this._linkUIAnchorElement = null;
 		this._lastActiveListItem = null;
 		this._pendingContextMenuListItem = null;
 		this._isApplyingListSelectAll = false;
@@ -1661,6 +1663,7 @@ class MWPEditor {
 		
 		// Clear link UI state
 		this._linkUIActive   = false;
+		this._linkUIAnchorElement = null;
 		this._savedLinkRange = null;
 
 		if (this.toolbarManager && typeof this.toolbarManager.destroy === 'function') {
@@ -1836,6 +1839,72 @@ class MWPEditor {
 		// Generic guard for editable content nested inside native interactive controls.
 		const interactiveHost = this.getSpaceInteractiveHost();
 		return !!interactiveHost;
+	}
+
+	/**
+	 * Delete text inside an element-scoped link without invoking the browser's
+	 * native editing command on the anchor. Native deletion across differently
+	 * formatted siblings can clone the editing host into its own contents,
+	 * producing nested anchors that invalidate the saved block.
+	 *
+	 * @param {InputEvent} event Cancelable beforeinput deletion event.
+	 * @returns {boolean} True when this editor handled the deletion.
+	 */
+	handleElementLinkDeletion(event) {
+		if (
+			!this.supportsElementLinkEditing() ||
+			!event.cancelable ||
+			(event.inputType !== 'deleteContentBackward' && event.inputType !== 'deleteContentForward')
+		) {
+			return false;
+		}
+
+		const selection = window.getSelection();
+		if (!selection || !selection.rangeCount) {
+			return false;
+		}
+		const selectedRange = selection.getRangeAt(0);
+		if (!this.element.contains(selectedRange.startContainer) || !this.element.contains(selectedRange.endContainer)) {
+			return false;
+		}
+
+		const beforeCaret = document.createRange();
+		beforeCaret.selectNodeContents(this.element);
+		beforeCaret.setEnd(selectedRange.startContainer, selectedRange.startOffset);
+		let startOffset = beforeCaret.toString().length;
+		let endOffset = startOffset;
+
+		if (!selectedRange.collapsed) {
+			const throughSelection = document.createRange();
+			throughSelection.selectNodeContents(this.element);
+			throughSelection.setEnd(selectedRange.endContainer, selectedRange.endOffset);
+			endOffset = throughSelection.toString().length;
+		} else {
+			const content = this.element.textContent || '';
+			if (event.inputType === 'deleteContentBackward' && startOffset > 0) {
+				startOffset -= startOffset > 1 && /[\uDC00-\uDFFF]/.test(content[startOffset - 1]) ? 2 : 1;
+			} else if (event.inputType === 'deleteContentForward' && endOffset < content.length) {
+				endOffset += /[\uD800-\uDBFF]/.test(content[endOffset]) ? 2 : 1;
+			}
+		}
+
+		event.preventDefault();
+		if (startOffset === endOffset) {
+			return true;
+		}
+
+		const start = this.resolveTextOffsetBoundary(this.element, startOffset);
+		const end = this.resolveTextOffsetBoundary(this.element, endOffset);
+		const deletion = document.createRange();
+		deletion.setStart(start.node, start.offset);
+		deletion.setEnd(end.node, end.offset);
+		deletion.deleteContents();
+		this.setCursorInElement(this.element, startOffset);
+		this.element.dispatchEvent(new InputEvent('input', {
+			bubbles: true,
+			inputType: event.inputType,
+		}));
+		return true;
 	}
 
 	/**
@@ -2306,10 +2375,29 @@ class MWPEditor {
 		this.toolbarManager.updateToolbarState();
 	}
 
+	/**
+	 * Open the native link editor for an inline selection or host anchor.
+	 *
+	 * Semantic link settings are read and materialized by the shared schema
+	 * operation executor so native and public edits use one renderer boundary.
+	 *
+	 * @param   {HTMLAnchorElement|null} anchorElement Existing anchor, when editing one.
+	 * @param   {Object}                 options       Link UI options.
+	 * @returns {void}
+	 */
 	showLinkUI(anchorElement = null, options = {}) {
 		const force = options.force === true;
 
 		if (!force && this._linkUIActive) {
+			// Link UI handlers close over their anchor. Rebuild the action-bar UI
+			// when the user clicks another link so its preview, input values, and
+			// Apply/Remove actions all target the newly selected anchor.
+			if (anchorElement && this._linkUIAnchorElement !== anchorElement) {
+				this.closeLinkUI();
+				this.showLinkUI(anchorElement, { force: true });
+				return;
+			}
+
 			const actionsContainer = SFE.activeEditorInstance?.actionsContainer || null;
 
 			if (actionsContainer) {
@@ -2334,6 +2422,16 @@ class MWPEditor {
 		}
 
 		const isElementLinkEditor = this.supportsElementLinkEditing();
+		const formatToken = isElementLinkEditor ? 'buttonLink' : 'link';
+		const linkCapability = this.options?.inlineFormatCapabilities?.[formatToken];
+		const operationExecutor = SFE.SchemaOperationExecutor;
+		if (
+			!linkCapability ||
+			typeof operationExecutor?.readAnchorSemanticSettings !== 'function' ||
+			typeof operationExecutor?.materializeAnchorSemanticSettings !== 'function'
+		) {
+			throw new Error(`FrontEdit link capability is unavailable for format "${formatToken}".`);
+		}
 
 		if (isElementLinkEditor) {
 			// Element-scoped link editors mutate the root anchor directly and do
@@ -2359,6 +2457,7 @@ class MWPEditor {
 		}
 
 		this._linkUIActive = true;
+		this._linkUIAnchorElement = anchorElement;
 
 		actionsContainer.innerHTML = '';
 		actionsContainer.classList.remove('mwp-sfe-state-hover', 'mwp-sfe-state-edit', 'mwp-sfe-state-comment', 'mwp-sfe-state-preview');
@@ -2397,29 +2496,16 @@ class MWPEditor {
 		const targetCheck   = linkUI.querySelector('.mwp-sfe-link-target');
 		const nofollowCheck = linkUI.querySelector('.mwp-sfe-link-nofollow');
 
-		/**
-		 * Build a rel string from an existing value.
-		 * - noreferrer / noopener are tied to the "New tab" checkbox
-		 * - nofollow is tied to the "No follow" checkbox
-		 * - All other tokens are preserved untouched
-		 */
-		const buildRel = (existingRel, newTab, noFollow) => {
-			const managed = new Set(['noreferrer', 'noopener', 'nofollow']);
-			const kept    = (existingRel || '').split(/\s+/).filter(r => r && !managed.has(r));
-			if (newTab)   { kept.push('noreferrer'); kept.push('noopener'); }
-			if (noFollow) { kept.push('nofollow'); }
-			return kept.join(' ') || undefined;
-		};
-
 		// Switch to edit mode and pre-fill inputs from an optional anchor element.
 		const openEditMode = (anchor) => {
+			const settings = anchor
+				? operationExecutor.readAnchorSemanticSettings(anchor, linkCapability)
+				: {};
 			viewMode.style.display  = 'none';
 			editMode.style.display  = 'flex';
 			urlInput.value          = anchor ? anchor.getAttribute('href') || '' : '';
-			targetCheck.checked     = anchor ? anchor.target === '_blank' : false;
-			nofollowCheck.checked   = anchor
-				? (anchor.getAttribute('rel') || '').split(/\s+/).includes('nofollow')
-				: false;
+			targetCheck.checked     = settings.new_tab === true;
+			nofollowCheck.checked   = settings.no_follow === true;
 			setTimeout(() => urlInput.focus(), 0);
 			if (SFE.activeEditorInstance) {
 				const el      = SFE.activeEditorInstance.element;
@@ -2479,26 +2565,18 @@ class MWPEditor {
 				url = 'https://' + url;
 			}
 
-			// Build rel from current live element rel - preserves custom tokens
-			const existingRel = anchorElement ? anchorElement.getAttribute('rel') : null;
-			const newRel      = buildRel(existingRel, targetCheck.checked, nofollowCheck.checked);
+			const settings = {
+				new_tab: targetCheck.checked,
+				no_follow: nofollowCheck.checked,
+			};
 
 			if (isElementLinkEditor) {
 				// Element-scoped editors update attrs directly on the root anchor.
 				anchorElement.setAttribute('href', url);
-				if (targetCheck.checked) {
-					anchorElement.setAttribute('target', '_blank');
-				} else {
-					anchorElement.removeAttribute('target');
-				}
-				if (newRel) {
-					anchorElement.setAttribute('rel', newRel);
-				} else {
-					anchorElement.removeAttribute('rel');
-				}
+				operationExecutor.materializeAnchorSemanticSettings(anchorElement, settings, linkCapability);
 				this.attributeChanges.url         = url;
-				this.attributeChanges.linkTarget  = targetCheck.checked ? '_blank' : undefined;
-				this.attributeChanges.rel         = newRel;
+				this.attributeChanges.linkTarget  = anchorElement.getAttribute('target') || undefined;
+				this.attributeChanges.rel         = anchorElement.getAttribute('rel') || undefined;
 			} else {
 				// Regular inline link: restore selection, then apply or create anchor
 				const sel = window.getSelection();
@@ -2509,16 +2587,7 @@ class MWPEditor {
 
 				const applyLinkAttributes = (el) => {
 					el.setAttribute('href', url);
-					if (targetCheck.checked) {
-						el.setAttribute('target', '_blank');
-					} else {
-						el.removeAttribute('target');
-					}
-					if (newRel) {
-						el.setAttribute('rel', newRel);
-					} else {
-						el.removeAttribute('rel');
-					}
+					operationExecutor.materializeAnchorSemanticSettings(el, settings, linkCapability);
 				};
 
 				if (anchorElement) {
@@ -2591,6 +2660,7 @@ class MWPEditor {
 			delete actionsContainer._savedLinkState;
 		}
 		this._linkUIActive = false;
+		this._linkUIAnchorElement = null;
 		this.element.focus();
 		
 		// Reposition action bar
@@ -3305,6 +3375,9 @@ class MWPEditor {
 
 		this._beforeInputHandler = (e) => {
 			const inputType = typeof e?.inputType === 'string' ? e.inputType : '';
+			if (this.handleElementLinkDeletion(e)) {
+				return;
+			}
 			if (inputType === 'selectAll' && isListRootElement(this.element)) {
 				const activeListItem = this._pendingContextMenuListItem || this.updateActiveListItemFromSelection() || this._lastActiveListItem;
 				if (this.handleListSelectAll(activeListItem)) {
